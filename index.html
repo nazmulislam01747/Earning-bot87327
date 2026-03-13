@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NB Earning Bot</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<script src='//libtl.com/sdk.js' data-zone='10709966' data-sdk='show_10709966'></script>
+
+<style>
+body{background-color:#0b0f1a;color:white;font-family:'Segoe UI',sans-serif;overflow-x:hidden}
+.glass-card{background:rgba(255,255,255,0.05);border-radius:20px;border:1px solid rgba(255,255,255,0.1);backdrop-filter:blur(10px)}
+.gradient-btn{background:linear-gradient(135deg,#6366f1 0%,#a855f7 100%);transition:0.3s}
+.hidden{display:none}
+.notice-bar{background:#d97706;color:white;font-size:11px;padding:8px;text-align:center;font-weight:bold;border-bottom:1px solid rgba(255,255,255,0.2)}
+</style>
+</head>
+
+<body class="max-w-md mx-auto">
+
+<div id="notice-container" class="hidden notice-bar">
+📢 <span id="notice-text">লোডিং...</span>
+</div>
+
+<div class="p-4" id="app-container">
+
+<div id="auth-screen" class="mt-10">
+<div class="glass-card p-8 shadow-2xl">
+<h2 class="text-2xl font-bold text-indigo-400 mb-6 text-center">একাউন্ট সাইন-আপ</h2>
+
+<input type="text" id="reg-name" placeholder="আপনার নাম" class="w-full bg-slate-900 border border-gray-700 rounded-lg p-3 mb-4 outline-none text-white">
+
+<input type="email" id="reg-email" placeholder="ইমেইল এড্রেস" class="w-full bg-slate-900 border border-gray-700 rounded-lg p-3 mb-6 outline-none text-white">
+
+<button onclick="handleAuth()" class="w-full py-4 gradient-btn rounded-xl font-bold">
+একাউন্ট তৈরি করুন
+</button>
+
+</div>
+</div>
+
+<div id="main-app" class="hidden">
+
+<div class="flex justify-between items-center mb-6">
+
+<div>
+<h1 class="text-xl font-bold text-indigo-400">NB Earning Bot</h1>
+<p id="user-display" class="text-[10px] text-gray-400"></p>
+</div>
+
+<div class="text-right">
+<span class="text-[9px] bg-red-600 px-2 py-1 rounded-full">Admin: @nayon093</span>
+<button onclick="logout()" class="block mt-1 text-[10px] text-gray-500 underline">Logout</button>
+</div>
+
+</div>
+
+<div class="glass-card p-6 mb-4 text-center border-t-2 border-indigo-500">
+
+<p class="text-gray-400 text-sm">বর্তমান ব্যালেন্স</p>
+
+<h2 class="text-4xl font-extrabold text-white">
+৳ <span id="balance">0.00</span>
+</h2>
+
+<p class="text-xs text-indigo-300 mt-2">
+রেফারেল: <span id="ref-count">0</span> টি
+</p>
+
+</div>
+
+<div class="glass-card p-4 mb-4">
+
+<p class="text-[10px] text-indigo-300 mb-2 uppercase font-bold">
+আপনার রেফারেল কোড/লিঙ্ক
+</p>
+
+<div class="flex gap-2">
+
+<input type="text" id="ref-link-input" readonly class="w-full bg-black/40 border border-gray-700 rounded p-2 text-[10px] outline-none">
+
+<button onclick="copyRef()" class="bg-indigo-600 px-3 py-1 rounded text-xs">
+Copy
+</button>
+
+</div>
+</div>
+
+<div class="glass-card p-5 text-center mb-6">
+
+<button onclick="watchAd()" class="w-full py-4 gradient-btn rounded-xl font-bold text-xl shadow-lg">
+📺 Watch Ads
+</button>
+
+<p class="text-[9px] text-gray-500 mt-2">
+প্রতি অ্যাডে ০.০৩ টাকা রিওয়ার্ড
+</p>
+
+</div>
+
+<div class="glass-card p-5 mb-10">
+
+<h4 class="font-bold mb-3 text-sm text-indigo-300 italic">
+উইথড্র সিস্টেম (সাপোর্ট: @nayon093)
+</h4>
+
+<input type="number" id="phone" placeholder="বিকাশ বা নগদ নম্বর" class="w-full bg-slate-900 border border-gray-700 rounded-lg p-3 mb-3 outline-none">
+
+<input type="number" id="amount" placeholder="টাকার পরিমাণ" class="w-full bg-slate-900 border border-gray-700 rounded-lg p-3 mb-3 outline-none">
+
+<button onclick="withdraw()" class="w-full bg-green-600 py-3 rounded-lg font-bold">
+টাকা উত্তোলন রিকোয়েস্ট
+</button>
+
+</div>
+
+</div>
+</div>
+
+<script>
+
+const firebaseConfig={
+apiKey:"AIzaSyAbXvdQrghhgdDtjIaZpHLm6hMQh7cT-mw",
+authDomain:"earning-bot-f2f4e.firebaseapp.com",
+databaseURL:"https://earning-bot-f2f4e-default-rtdb.firebaseio.com",
+projectId:"earning-bot-f2f4e",
+storageBucket:"earning-bot-f2f4e.firebasestorage.app",
+messagingSenderId:"307533837665",
+appId:"1:307533837665:web:c2fd628a7a98369e968120"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db=firebase.database();
+
+const webapp=window.Telegram.WebApp;
+webapp.ready();
+
+const userId=webapp.initDataUnsafe.user?webapp.initDataUnsafe.user.id:"test_user";
+
+function init(){
+
+db.ref('users/'+userId).on('value',(snapshot)=>{
+
+const data=snapshot.val();
+
+if(data){
+
+showMainApp(data);
+
+}else{
+
+document.getElementById('auth-screen').classList.remove('hidden');
+
+}
+
+});
+
+}
+
+function handleAuth(){
+
+const name=document.getElementById('reg-name').value;
+const email=document.getElementById('reg-email').value;
+
+if(name.length<3||!email.includes("@"))
+return alert("সঠিক নাম ও ইমেইল দিন!");
+
+db.ref('users/'+userId).set({
+
+name:name,
+email:email,
+balance:0.00,
+refCount:0,
+id:userId
+
+}).then(()=>init());
+
+}
+
+function showMainApp(data){
+
+document.getElementById('auth-screen').classList.add('hidden');
+document.getElementById('main-app').classList.remove('hidden');
+document.getElementById('notice-container').classList.remove('hidden');
+
+if(data){
+
+document.getElementById('balance').innerText=data.balance.toFixed(2);
+document.getElementById('ref-count').innerText=data.refCount;
+document.getElementById('user-display').innerText=data.name;
+
+document.getElementById('ref-link-input').value="https://t.me/nbearning_bot?start="+userId;
+
+const noticeText=document.getElementById('notice-text');
+
+if(data.refCount>10){
+
+noticeText.innerText="আপনি ১০টির বেশি রেফার করেছেন। টাকা তুলতে আপনাকে ৩০০০ অ্যাড দেখতে হবে। সাহায্য: @nayon093";
+
+}else{
+
+noticeText.innerText="১০টির কম রেফার থাকলে ৫০ টাকা হলেই উইথড্র করতে পারবেন। সাহায্য: @nayon093";
+
+}
+
+}
+
+}
+
+function watchAd(){
+
+if(typeof show_10709966==='function'){
+
+show_10709966().then(()=>{
+
+updateBalance(0.03);
+
+}).catch(()=>{
+
+alert("অ্যাড এই মুহূর্তে পাওয়া যাচ্ছে না, আবার চেষ্টা করুন।");
+
+});
+
+}else{
+
+alert("অ্যাড লোড হচ্ছে না।");
+
+}
+
+}
+
+function updateBalance(amt){
+
+db.ref('users/'+userId+'/balance').transaction((current)=>{
+
+return(current||0)+amt;
+
+});
+
+}
+
+function copyRef(){
+
+const copyText=document.getElementById("ref-link-input");
+
+copyText.select();
+
+document.execCommand("copy");
+
+alert("রেফার লিঙ্ক কপি হয়েছে!");
+
+}
+
+function withdraw(){
+
+const amt=parseFloat(document.getElementById('amount').value);
+const phone=document.getElementById('phone').value;
+
+db.ref('users/'+userId).once('value',(snapshot)=>{
+
+const user=snapshot.val();
+
+let minAmt=(user.refCount>10)?3000:50;
+
+if(amt<minAmt)return alert(`আপনার জন্য সর্বনিম্ন উত্তোলন ${minAmt} টাকা।`);
+
+if(amt>user.balance)return alert("পর্যাপ্ত ব্যালেন্স নেই।");
+
+db.ref('withdraws').push({
+
+userId:userId,
+name:user.name,
+phone:phone,
+amount:amt,
+status:'pending',
+time:new Date().toLocaleString()
+
+}).then(()=>{
+
+alert("রিকোয়েস্ট সফল! অ্যাডমিন @nayon093 এর সাথে যোগাযোগ করুন।");
+
+});
+
+});
+
+}
+
+function logout(){
+
+if(confirm("লগআউট করতে চান?")){
+
+localStorage.clear();
+location.reload();
+
+}
+
+}
+
+init();
+
+</script>
+
+</body>
+</html>
