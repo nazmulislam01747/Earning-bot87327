@@ -1,236 +1,2083 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NB Earning Bot </title>
-    
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
-    
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>NB Earning Zone — Watch & Earn</title>
+<!-- PWA — enables "Add to Home Screen" with an icon + splash screen.
+     No offline functionality is provided (see sw.js) — this app needs
+     live Firestore data to mean anything, so there's no useful offline
+     mode to build here per instruction. -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1F7A5C">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-    <script src='//libtl.com/sdk.js' data-zone='10709966' data-sdk='show_10709966'></script>
+<!-- ===================================================================
+  FIREBASE SETUP — replace the config below with your own project's
+  values (Firebase Console → Project settings → General → Your apps).
+  This app uses: Authentication (Email/Password) + Cloud Firestore.
+=================================================================== -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js"></script>
 
-    <script src="https://pl28917808.effectivegatecpm.com/67/a5/9f/67a59f957a66f5efcf93b82957c7b699.js"></script>
+<!-- ===================================================================
+  MONETAG AD SDK — zone 10709966 (nbearning_bot). After this loads, the
+  global function show_10709966() becomes available to trigger a real
+  Rewarded Interstitial ad.
+=================================================================== -->
+<script src='//libtl.com/sdk.js' data-zone='10709966' data-sdk='show_10709966'></script>
 
-    <style>
-        body { background-color: #0b0f1a; color: white; font-family: 'Segoe UI', sans-serif; overflow-x: hidden; }
-        .glass-card { background: rgba(255, 255, 255, 0.05); border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px); }
-        .gradient-btn { background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); transition: 0.3s; }
-        .hidden { display: none; }
-        .notice-bar { background: #d97706; color: white; font-size: 11px; padding: 8px; text-align: center; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.2); }
-        .ad-slot { display: flex; justify-content: center; margin: 10px 0; overflow: hidden; }
-    </style>
+<!-- ===================================================================
+  PASSIVE / AUTO-DISPLAY AD NETWORKS — banners only, no popups/overlays.
+  ⚠️ REMOVED (2026): Adsterra "Social Bar", AdsBitvex vignette, Adcash
+  runAutoTag, and Advateka used to be included here. They were removed
+  because, in practice, they:
+    (a) injected full-screen overlay elements that sat on top of the
+        entire page and intercepted taps — this is what was actually
+        breaking the Login button (tapping it hit the ad overlay, not
+        the button underneath);
+    (b) served a fake "browser notification permission" dialog (a
+        well-documented Adsterra Social Bar tactic) designed to trick
+        people into allowing spam push notifications;
+    (c) served a fake "your device will stop working — Update Now"
+        scareware prompt, a classic social-engineering tactic used to
+        push malware/unwanted installs;
+    (d) served adult-content ad creatives, inappropriate for a
+        general-audience app.
+  None of that is something this app should ever show its own users,
+  regardless of the ad revenue. Only non-intrusive banner/SDK ad units
+  are kept below.
+=================================================================== -->
+<meta name="monetag" content="9a339942042bafb6c47cc6b1015857e5">
+<script>(function(s){s.dataset.zone='11692395',s.src='https://nap5k.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))</script>
+
+<script async src="https://sdk.adsbitvex.com/functions/v1/banner-serve?action=sdk"></script>
+
+<style>
+  :root{
+    --ink:#16302B;
+    --paper:#F2F6F3;
+    --surface:#FFFFFF;
+    --emerald:#1F7A5C;
+    --emerald-dark:#12463A;
+    --emerald-soft:#E4F1EA;
+    --gold:#D4A537;
+    --gold-soft:#FBF1DA;
+    --rose:#C23B6B;
+    --rose-soft:#FBE9F0;
+    --muted:#6B7D77;
+    --border:#DFE8E3;
+    --radius:18px;
+    --shadow:0 1px 2px rgba(22,48,43,.05), 0 8px 24px -12px rgba(22,48,43,.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Manrope',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  h1,h2,h3,.num{ font-family:'Fraunces',serif; letter-spacing:-.01em; }
+  button{ font-family:inherit; }
+  ::selection{ background:var(--gold-soft); }
+
+  /* ---------- layout shell ---------- */
+  #app{ display:none; flex-direction:column; min-height:100vh; max-width:480px; margin:0 auto; background:var(--paper); position:relative; }
+  .screen{ max-width:480px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; }
+
+  /* ---------- auth screen ---------- */
+  .auth-wrap{ padding:48px 24px 32px; flex:1; display:flex; flex-direction:column; }
+  .brand{ display:flex; align-items:center; gap:10px; margin-bottom:40px; }
+  .brand-mark{ width:40px; height:40px; border-radius:12px; background:linear-gradient(155deg,var(--emerald),var(--emerald-dark)); display:flex; align-items:center; justify-content:center; color:var(--gold); font-family:'Fraunces',serif; font-weight:700; font-size:20px; flex-shrink:0; }
+  .brand-name{ font-family:'Fraunces',serif; font-weight:600; font-size:20px; }
+  .auth-title{ font-size:28px; font-weight:600; margin:0 0 6px; }
+  .auth-sub{ color:var(--muted); font-size:14.5px; margin:0 0 28px; line-height:1.5; }
+  .field{ margin-bottom:14px; }
+  .field label{ display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.04em; }
+  .field input, .field select{
+    width:100%; padding:13px 14px; border-radius:12px; border:1.5px solid var(--border);
+    background:var(--surface); font-size:15px; font-family:inherit; color:var(--ink);
+  }
+  .field input:focus, .field select:focus{ outline:none; border-color:var(--emerald); }
+  .btn{
+    border:none; border-radius:12px; padding:14px 20px; font-size:15px; font-weight:700;
+    cursor:pointer; width:100%; transition:transform .12s ease, opacity .12s ease;
+  }
+  .btn:active{ transform:scale(.98); }
+  .btn-primary{ background:var(--emerald); color:#fff; }
+  .btn-primary:disabled{ opacity:.5; }
+  .btn-ghost{ background:transparent; color:var(--emerald); border:1.5px solid var(--border); }
+  .switch-row{ text-align:center; margin-top:18px; font-size:14px; color:var(--muted); }
+  .switch-row a{ color:var(--emerald); font-weight:700; text-decoration:none; cursor:pointer; }
+  .auth-error{ background:var(--rose-soft); color:var(--rose); font-size:13.5px; padding:10px 12px; border-radius:10px; margin-bottom:14px; display:none; }
+
+  /* ---------- top bar ---------- */
+  .topbar{ display:flex; align-items:center; justify-content:space-between; padding:18px 20px 14px; }
+  .topbar .brand-name{ font-size:17px; }
+  .balance-pill{
+    display:flex; align-items:center; gap:7px; background:var(--surface); border:1.5px solid var(--border);
+    padding:7px 14px 7px 8px; border-radius:999px; box-shadow:var(--shadow);
+  }
+  .taka-badge{ width:24px; height:24px; border-radius:50%; background:var(--gold); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:13px; font-family:'Fraunces',serif; }
+  .balance-pill .amt{ font-weight:800; font-size:15px; }
+
+  /* ---------- content ---------- */
+  .content{ flex:1; overflow-y:auto; padding:4px 20px 100px; }
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  .hero-card{ background:linear-gradient(155deg,var(--emerald),var(--emerald-dark)); color:#fff; border-radius:20px; padding:26px 22px; margin-bottom:18px; position:relative; overflow:hidden; }
+  .hero-card::after{ content:'৳'; position:absolute; right:-6px; bottom:-28px; font-family:'Fraunces',serif; font-size:150px; font-weight:700; opacity:.10; }
+  .hero-label{ font-size:13px; opacity:.8; margin:0 0 4px; }
+  .hero-amt{ font-size:38px; font-weight:700; margin:0; }
+  .hero-sub{ font-size:12.5px; opacity:.75; margin-top:8px; }
+
+  .stat-row{ display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px; }
+  .stat-card{ background:var(--surface); border-radius:14px; padding:14px 16px; border:1px solid var(--border); }
+  .stat-card .label{ font-size:11.5px; color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.03em; }
+  .stat-card .val{ font-size:20px; font-weight:700; margin-top:3px; }
+
+  .section-title{ font-size:13px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin:22px 0 10px; }
+
+  .card{ background:var(--surface); border-radius:16px; padding:16px 16px 16px 18px; margin-bottom:12px; border:1px solid var(--border); border-left:4px solid var(--emerald); display:flex; align-items:center; gap:14px; }
+  .card.gold{ border-left-color:var(--gold); }
+  .card.rose{ border-left-color:var(--rose); }
+  .card-icon{ width:44px; height:44px; border-radius:12px; background:var(--emerald-soft); display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+  .card.gold .card-icon{ background:var(--gold-soft); }
+  .card-body{ flex:1; min-width:0; }
+  .card-title{ font-weight:700; font-size:15px; margin:0 0 2px; }
+  .card-desc{ font-size:12.5px; color:var(--muted); line-height:1.4; margin:0; }
+  .card-cta{ background:var(--emerald); color:#fff; border:none; padding:9px 16px; border-radius:10px; font-weight:700; font-size:13px; cursor:pointer; white-space:nowrap; flex-shrink:0; }
+  .card-cta:disabled{ background:var(--border); color:var(--muted); cursor:not-allowed; }
+  .card-cta.disabled-txt{ font-size:11px; }
+
+  .empty{ text-align:center; padding:40px 20px; color:var(--muted); font-size:14px; }
+
+  /* wallet */
+  .method-grid{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
+  .method-opt{ border:1.5px solid var(--border); border-radius:12px; padding:10px 6px; text-align:center; font-size:12.5px; font-weight:700; cursor:pointer; background:var(--surface); }
+  .method-opt.sel{ border-color:var(--emerald); background:var(--emerald-soft); color:var(--emerald-dark); }
+  .txn-row{ display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid var(--border); }
+  .txn-row:last-child{ border-bottom:none; }
+  .txn-info .t{ font-size:14px; font-weight:600; }
+  .txn-info .d{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .txn-amt{ font-weight:700; font-size:14.5px; }
+  .txn-amt.neg{ color:var(--rose); }
+  .txn-amt.pos{ color:var(--emerald); }
+  .status-chip{ font-size:10.5px; font-weight:800; padding:3px 8px; border-radius:999px; text-transform:uppercase; letter-spacing:.03em; }
+  .status-pending{ background:var(--gold-soft); color:#8a6c1f; }
+  .status-approved{ background:var(--emerald-soft); color:var(--emerald-dark); }
+  .status-rejected{ background:var(--rose-soft); color:var(--rose); }
+
+  /* refer */
+  .refer-box{ background:var(--surface); border:1.5px dashed var(--emerald); border-radius:14px; padding:16px; text-align:center; margin-bottom:16px; }
+  .refer-code{ font-family:'Fraunces',serif; font-size:22px; font-weight:700; letter-spacing:.04em; margin:6px 0 14px; }
+  .refer-row{ display:flex; gap:10px; }
+
+  /* profile */
+  .profile-row{ display:flex; justify-content:space-between; padding:14px 0; border-bottom:1px solid var(--border); font-size:14.5px; }
+  .profile-row .k{ color:var(--muted); }
+  .profile-row .v{ font-weight:600; }
+
+  /* bottom nav */
+  .bottom-nav{
+    position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:480px;
+    background:var(--surface); border-top:1px solid var(--border); display:flex;
+    padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+  }
+  .nav-btn{ flex:1; background:none; border:none; display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 2px; cursor:pointer; color:var(--muted); }
+  .nav-btn.active{ color:var(--emerald); }
+  .nav-btn .ic{ font-size:19px; }
+  .nav-btn .lb{ font-size:10px; font-weight:700; }
+
+  /* watch-ad modal */
+  .modal-overlay{ display:none; position:fixed; inset:0; background:rgba(18,32,29,.7); z-index:50; align-items:center; justify-content:center; padding:20px; }
+  .modal-overlay.show{ display:flex; }
+  .modal-box{ background:var(--surface); border-radius:20px; padding:28px 22px; width:100%; max-width:340px; text-align:center; }
+  .timer-ring{ width:88px; height:88px; border-radius:50%; border:6px solid var(--emerald-soft); border-top-color:var(--emerald); margin:0 auto 16px; display:flex; align-items:center; justify-content:center; font-family:'Fraunces',serif; font-size:26px; font-weight:700; animation:spin 1s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .ad-slot{ background:var(--paper); border-radius:12px; padding:20px; font-size:13px; color:var(--muted); margin-bottom:16px; }
+
+  /* toast */
+  #toast{ position:fixed; left:50%; bottom:90px; transform:translateX(-50%) translateY(20px); background:var(--ink); color:#fff; padding:12px 20px; border-radius:12px; font-size:13.5px; font-weight:600; opacity:0; transition:all .25s ease; z-index:60; pointer-events:none; max-width:90%; text-align:center; }
+  #toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
+  /* persistent error banner — unlike the toast this does NOT auto-hide,
+     so a long Firestore error (e.g. a missing-index message with a
+     console link) stays on screen long enough to read and copy on mobile */
+  #errorBanner{ display:none; position:fixed; top:0; left:0; right:0; background:var(--rose); color:#fff; padding:10px 40px 10px 14px; font-size:11.5px; line-height:1.4; z-index:70; word-break:break-all; }
+  #errorBanner .close-err{ position:absolute; top:6px; right:10px; background:none; border:none; color:#fff; font-size:16px; font-weight:700; cursor:pointer; padding:4px 8px; }
+
+  .loading-dot{ display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor; margin:0 2px; animation:pulse 1.2s infinite ease-in-out; }
+  .loading-dot:nth-child(2){ animation-delay:.15s; } .loading-dot:nth-child(3){ animation-delay:.3s; }
+  @keyframes pulse{ 0%,80%,100%{ opacity:.3; } 40%{ opacity:1; } }
+
+  /* FIX — full-screen loading state shown between "signed in" and "user
+     profile doc actually loaded". Without this, registration briefly
+     flashed the main app UI with empty/undefined fields (or flashed back
+     to the auth screen entirely) whenever the registration transaction
+     hadn't finished committing yet by the time onAuthStateChanged fired. */
+  #appLoading{ display:none; min-height:100vh; max-width:480px; margin:0 auto; align-items:center; justify-content:center; flex-direction:column; gap:14px; }
+  #appLoading .brand-mark{ width:52px; height:52px; font-size:26px; }
+  #appLoading .msg{ color:var(--muted); font-size:13.5px; }
+</style>
 </head>
-<body class="max-w-md mx-auto">
+<body>
 
-    <div id="notice-container" class="hidden notice-bar">
-        📢 <span id="notice-text">লোডিং...</span>
+<div id="errorBanner"><button class="close-err" onclick="document.getElementById('errorBanner').style.display='none'">✕</button><span id="errorBannerText"></span></div>
+
+<!-- ================= AUTH SCREEN ================= -->
+<div class="screen" id="authScreen">
+  <div class="auth-wrap">
+    <!-- PASSIVE AD — small bounded banner, ABOVE the form, in normal
+         page flow (not fixed/overlay positioned) so it can NEVER cover
+         the email/password fields or any button. This is the safe
+         Adsterra banner format only — see the note in <head> about why
+         the "Social Bar" script is deliberately NOT used here. -->
+    <div style="width:320px;max-width:100%;margin:0 auto 16px;min-height:50px;">
+      <script>
+        atOptions = { 'key':'d7972c17b3c34e765ae9b05c136c0db4', 'format':'iframe', 'height':50, 'width':320, 'params':{} };
+      </script>
+      <script src="https://www.highrevenueformat.com/d7972c17b3c34e765ae9b05c136c0db4/invoke.js"></script>
+    </div>
+    <!-- Admin-added custom ad scripts (login placement) render here -->
+    <div id="customAdSlotLogin"></div>
+    <div class="brand">
+      <div class="brand-mark">৳</div>
+      <div class="brand-name">NB Earning Zone</div>
     </div>
 
-    <div class="p-4" id="app-container">
-        
-        <div id="auth-screen" class="mt-10">
-            <div class="glass-card p-8 shadow-2xl">
-                <h2 class="text-2xl font-bold text-indigo-400 mb-6 text-center">একাউন্ট সাইন-আপ</h2>
-                <input type="text" id="reg-name" placeholder="আপনার নাম" class="w-full bg-slate-900 border border-gray-700 rounded-lg p-3 mb-4 outline-none text-white">
-                <input type="email" id="reg-email" placeholder="ইমেইল এড্রেস" class="w-full bg-slate-900 border border-gray-700 rounded-lg p-3 mb-6 outline-none text-white">
-                <button onclick="handleAuth()" class="w-full py-4 gradient-btn rounded-xl font-bold">একাউন্ট তৈরি করুন</button>
-            </div>
-        </div>
-
-        <div id="main-app" class="hidden">
-            <div class="ad-slot">
-                <script type="text/javascript">
-                    atOptions = { 'key' : 'a244b2b55b1381208a24ab7b975eb94f', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
-                </script>
-                <script src="https://www.highperformanceformat.com/a244b2b55b1381208a24ab7b975eb94f/invoke.js"></script>
-            </div>
-
-            <div class="flex justify-between items-center mb-6">
-                <div>
-                    <h1 class="text-xl font-bold text-indigo-400">NB Earning Bot</h1>
-                    <p id="user-display" class="text-[10px] text-gray-400"></p>
-                </div>
-                <div class="text-right">
-                    <span class="text-[9px] bg-red-600 px-2 py-1 rounded-full">Admin: @nayon093</span>
-                    <button onclick="logout()" class="block mt-1 text-[10px] text-gray-500 underline">Logout</button>
-                </div>
-            </div>
-
-            <div class="glass-card p-6 mb-4 text-center border-t-2 border-indigo-500">
-                <p class="text-gray-400 text-sm">বর্তমান ব্যালেন্স</p>
-                <h2 class="text-4xl font-extrabold text-white">৳ <span id="balance">0.00</span></h2>
-                <p class="text-xs text-indigo-300 mt-2">রেফারেল: <span id="ref-count">0</span> টি</p>
-            </div>
-
-            <div class="ad-slot">
-                <script type="text/javascript">
-                    atOptions = { 'key' : 'a244b2b55b1381208a24ab7b975eb94f', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
-                </script>
-                <script src="https://www.highperformanceformat.com/a244b2b55b1381208a24ab7b975eb94f/invoke.js"></script>
-            </div>
-
-            <div class="glass-card p-4 mb-4">
-                <p class="text-[10px] text-indigo-300 mb-2 uppercase font-bold">আপনার রেফারেল কোড/লিঙ্ক</p>
-                <div class="flex gap-2">
-                    <input type="text" id="ref-link-input" readonly class="w-full bg-black/40 border border-gray-700 rounded p-2 text-[10px] outline-none">
-                    <button onclick="copyRef()" class="bg-indigo-600 px-3 py-1 rounded text-xs">Copy</button>
-                </div>
-            </div>
-
-            <div class="ad-slot">
-                <script type="text/javascript">
-                    atOptions = { 'key' : 'a244b2b55b1381208a24ab7b975eb94f', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
-                </script>
-                <script src="https://www.highperformanceformat.com/a244b2b55b1381208a24ab7b975eb94f/invoke.js"></script>
-            </div>
-
-            <div class="glass-card p-5 text-center mb-6">
-                <button onclick="watchAd()" class="w-full py-4 gradient-btn rounded-xl font-bold text-xl shadow-lg">📺 Watch Ads</button>
-                <p class="text-[9px] text-gray-500 mt-2">প্রতি অ্যাডে ০.০২ টাকা রিওয়ার্ড</p>
-            </div>
-
-            <div class="ad-slot">
-                <script type="text/javascript">
-                    atOptions = { 'key' : 'a244b2b55b1381208a24ab7b975eb94f', 'format' : 'iframe', 'height' : 50, 'width' : 320, 'params' : {} };
-                </script>
-                <script src="https://www.highperformanceformat.com/a244b2b55b1381208a24ab7b975eb94f/invoke.js"></script>
-            </div>
-
-            <div class="glass-card p-5 mb-10">
-                <h4 class="font-bold mb-3 text-sm text-indigo-300 italic">উইথড্র সিস্টেম (সাপোর্ট: @nayon093)</h4>
-                <input type="number" id="phone" placeholder="বিকাশ বা নগদ নম্বর" class="w-full bg-slate-900 border border-gray-700 rounded-lg p-3 mb-3 outline-none">
-                <input type="number" id="amount" placeholder="টাকার পরিমাণ" class="w-full bg-slate-900 border border-gray-700 rounded-lg p-3 mb-3 outline-none">
-                <button onclick="withdraw()" class="w-full bg-green-600 py-3 rounded-lg font-bold">টাকা উত্তোলন রিকোয়েস্ট</button>
-            </div>
-        </div>
+    <div id="loginView">
+      <h1 class="auth-title">Welcome back</h1>
+      <p class="auth-sub">Log in to keep earning.</p>
+      <div class="auth-error" id="loginError"></div>
+      <div class="field"><label>Email</label><input type="email" id="loginEmail" placeholder="you@example.com"></div>
+      <div class="field"><label>Password</label><input type="password" id="loginPassword" placeholder="••••••••"></div>
+      <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">Log in</button>
+      <div class="switch-row">New here? <a onclick="showRegister()">Create an account</a></div>
+      <div class="switch-row"><a onclick="showForgot()">Forgot password?</a></div>
     </div>
 
-    <script>
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-            databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT_ID.appspot.com",
-            messagingSenderId: "YOUR_ID",
-            appId: "YOUR_APP_ID"
-        };
-        
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.database();
+    <div id="registerView" style="display:none;">
+      <h1 class="auth-title">Create account</h1>
+      <p class="auth-sub">Start earning in under a minute.</p>
+      <div class="auth-error" id="registerError"></div>
+      <div class="field"><label>Full name</label><input type="text" id="regName" placeholder="Your name"></div>
+      <div class="field"><label>Email</label><input type="email" id="regEmail" placeholder="you@example.com"></div>
+      <div class="field"><label>Phone</label><input type="tel" id="regPhone" placeholder="01XXXXXXXXX"></div>
+      <div class="field"><label>Password</label><input type="password" id="regPassword" placeholder="At least 6 characters"></div>
+      <div class="field"><label>Referral code (optional)</label><input type="text" id="regReferral" placeholder="e.g. NIROB4F2"></div>
+      <p style="font-size:11.5px;color:var(--muted);margin:0 0 12px;">Create account চাপলে তুমি আমাদের <a href="terms.html" target="_blank" style="color:var(--emerald);font-weight:700;">Terms & Privacy</a>-এর সাথে সম্মত হচ্ছ।</p>
+      <button class="btn btn-primary" id="registerBtn" onclick="doRegister()">Create account</button>
+      <div class="switch-row">Already have an account? <a onclick="showLogin()">Log in</a></div>
+    </div>
 
-        const webapp = window.Telegram.WebApp;
-        webapp.ready();
-        const userId = webapp.initDataUnsafe.user ? webapp.initDataUnsafe.user.id : "test_user";
+    <div id="forgotView" style="display:none;">
+      <h1 class="auth-title">Reset password</h1>
+      <p class="auth-sub">Enter your email — we'll send a free reset link (no SMS, no cost).</p>
+      <div class="auth-error" id="forgotError"></div>
+      <div class="field"><label>Email</label><input type="email" id="forgotEmail" placeholder="you@example.com"></div>
+      <button class="btn btn-primary" id="forgotBtn" onclick="doForgotPassword()">Send reset link</button>
+      <div class="switch-row"><a onclick="showLogin()">Back to log in</a></div>
+    </div>
+  </div>
+</div>
 
-        function init() {
-            db.ref('users/' + userId).on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    showMainApp(data);
-                } else {
-                    document.getElementById('auth-screen').classList.remove('hidden');
-                }
-            });
+<!-- ================= APP LOADING (between sign-in and profile doc arriving) ================= -->
+<div id="appLoading">
+  <div class="brand-mark">৳</div>
+  <div class="msg">Setting up your account<span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span></div>
+</div>
+
+<!-- ================= MAIN APP ================= -->
+<div id="app">
+  <div class="topbar">
+    <div class="brand"><div class="brand-mark" style="width:32px;height:32px;font-size:16px;">৳</div><div class="brand-name">NB Earning Zone</div></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="balance-pill"><div class="taka-badge">৳</div><div class="amt" id="topBalance">0</div></div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- PASSIVE AD — top banner, visible above every tab. Adsterra's
+         invoke.js writes its iframe into whatever container it finds
+         itself in, so atOptions must be set immediately before this
+         specific script tag (not just once anywhere on the page). -->
+    <div style="width:320px;max-width:100%;margin:0 auto 10px;min-height:50px;">
+      <script>
+        atOptions = { 'key':'d7972c17b3c34e765ae9b05c136c0db4', 'format':'iframe', 'height':50, 'width':320, 'params':{} };
+      </script>
+      <script src="https://www.highrevenueformat.com/d7972c17b3c34e765ae9b05c136c0db4/invoke.js"></script>
+    </div>
+    <!-- Admin-added custom ad scripts (app_top placement) render here -->
+    <div id="customAdSlotAppTop"></div>
+
+    <!-- DASHBOARD -->
+    <div class="panel active" id="panel-dashboard">
+      <!-- Admin-added custom ad scripts (dashboard_middle placement) render here -->
+      <div id="customAdSlotDashboard"></div>
+      <div class="hero-card">
+        <p class="hero-label">Available balance</p>
+        <p class="hero-amt">৳<span id="heroBalance">0</span></p>
+        <p class="hero-sub" id="heroName">Welcome back</p>
+        <p class="hero-sub" id="streakDisplay" style="display:none;">🔥 <span id="streakDays">0</span> দিনের streak</p>
+      </div>
+      <div class="stat-row">
+        <div class="stat-card"><div class="label">Today's earning</div><div class="val" id="statToday">৳0</div></div>
+        <div class="stat-card"><div class="label">Ads watched</div><div class="val" id="statAdsWatched">0</div></div>
+      </div>
+
+      <!-- PASSIVE AD — dashboard-middle banner (AdsBitvex). The SDK
+           script itself lives in <head> and scans for this div by its
+           data attribute, so it self-locates regardless of load order. -->
+      <div data-abx-banner="7334c173d6c1" data-abx-w="320" data-abx-h="50" style="display:block;margin:0 auto 14px;width:320px;max-width:100%;height:50px;line-height:0;"></div>
+
+      <div class="section-title">Earn now</div>
+      <div id="dashboardAdsList"><div class="empty">Loading offers…</div></div>
+    </div>
+
+    <!-- EARN -->
+    <div class="panel" id="panel-earn">
+      <h2 style="font-size:20px;margin:8px 0 4px;">Watch & earn</h2>
+      <p style="color:var(--muted);font-size:13.5px;margin:0 0 16px;">Watch a short ad, get credited automatically.</p>
+      <div id="earnAdsList"><div class="empty">Loading offers…</div></div>
+
+      <div class="section-title">Your earning history</div>
+      <div id="earnHistoryList" class="card" style="display:block;border-left:none;padding:4px 16px;"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- WALLET -->
+    <div class="panel" id="panel-wallet">
+      <h2 style="font-size:20px;margin:8px 0 4px;">Wallet</h2>
+      <div class="stat-row" style="margin-top:14px;">
+        <div class="stat-card"><div class="label">Available</div><div class="val">৳<span id="walletBalance">0</span></div></div>
+        <div class="stat-card"><div class="label">Total earned</div><div class="val">৳<span id="walletTotal">0</span></div></div>
+      </div>
+
+      <div class="section-title">Request withdrawal</div>
+      <div class="card" style="display:block;border-left:none;">
+        <div class="field"><label>Method</label>
+          <div class="method-grid">
+            <div class="method-opt sel" data-method="bKash" onclick="selectMethod(this)">bKash</div>
+            <div class="method-opt" data-method="Nagad" onclick="selectMethod(this)">Nagad</div>
+            <div class="method-opt" data-method="Rocket" onclick="selectMethod(this)">Rocket</div>
+          </div>
+        </div>
+        <div class="field"><label>Account number</label><input type="tel" id="wdAccount" placeholder="01XXXXXXXXX"></div>
+        <div class="field"><label>Amount (৳)</label><input type="number" id="wdAmount" placeholder="Min. withdrawal ৳100"></div>
+        <button class="btn btn-primary" id="wdSubmitBtn" onclick="submitWithdrawal()">Request withdrawal</button>
+        <p style="font-size:11.5px;color:var(--muted);margin:10px 0 0;line-height:1.5;">Requests are reviewed and paid out manually to your number. This usually takes up to 24–48 hours.</p>
+      </div>
+
+      <div class="section-title">Transaction history</div>
+      <div id="txnList" class="card" style="display:block;border-left:none;padding:4px 16px;"><div class="empty">No activity yet</div></div>
+    </div>
+
+    <!-- REFER -->
+    <div class="panel" id="panel-refer">
+      <h2 style="font-size:20px;margin:8px 0 4px;">Refer & earn</h2>
+      <p style="color:var(--muted);font-size:13.5px;margin:0 0 16px;">Share your code — you both get a bonus when they join.</p>
+      <div class="refer-box">
+        <div style="font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;">Your referral code</div>
+        <div class="refer-code" id="referCode">—</div>
+        <div class="refer-row">
+          <button class="btn btn-ghost" onclick="copyReferral()">Copy code</button>
+          <button class="btn btn-primary" onclick="shareReferral()">Share</button>
+        </div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-card"><div class="label">Friends joined</div><div class="val" id="referCount">0</div></div>
+        <div class="stat-card"><div class="label">Referral earnings</div><div class="val">৳<span id="referEarnings">0</span></div></div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD -->
+    <div class="panel" id="panel-leaderboard">
+      <h2 style="font-size:20px;margin:8px 0 4px;">Leaderboard</h2>
+      <p style="color:var(--muted);font-size:13.5px;margin:0 0 14px;">আজকের সেরারা — প্রতিদিন রাত ১২টার পর নতুন করে শুরু হয়। শুধু নাম দেখা যাবে, অন্য কোনো তথ্য না।</p>
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <button class="method-opt sel" id="lbSortEarned" onclick="setLeaderboardSort('earnedToday')" style="flex:1;">Income</button>
+        <button class="method-opt" id="lbSortAds" onclick="setLeaderboardSort('adsWatchedToday')" style="flex:1;">Ads</button>
+        <button class="method-opt" id="lbSortRef" onclick="setLeaderboardSort('referralsToday')" style="flex:1;">Referrals</button>
+      </div>
+      <div id="leaderboardList"><div class="empty">Loading…</div></div>
+    </div>
+
+    <!-- PROFILE -->
+    <div class="panel" id="panel-profile">
+      <h2 style="font-size:20px;margin:8px 0 16px;">Profile</h2>
+      <div class="card" style="display:block;border-left:none;">
+        <div class="profile-row"><span class="k">Name</span><span class="v" id="profName">—</span></div>
+        <div class="profile-row"><span class="k">Email</span><span class="v" id="profEmail">—</span></div>
+        <div class="profile-row"><span class="k">Phone</span><span class="v" id="profPhone">—</span></div>
+        <div class="profile-row" style="border-bottom:none;"><span class="k">Member since</span><span class="v" id="profJoined">—</span></div>
+      </div>
+
+      <div class="section-title">Support</div>
+      <button class="btn btn-ghost" id="supportOpenBtn" onclick="openSupportModal()" style="margin-bottom:4px;">📞 Support-এ যোগাযোগ করো</button>
+
+      <div class="card gold" id="claimAdminSection" style="display:none;border-left-color:var(--gold);margin-top:14px;">
+        <div style="width:100%;">
+          <p class="card-title" style="margin-bottom:4px;">প্রথমবার সেটআপ</p>
+          <p class="card-desc" style="margin-bottom:12px;">এই অ্যাপের মালিক তুমি হলে, নিচে চেপে নিজেকে Admin বানাও (একবারই কাজ করবে)।</p>
+          <button class="btn btn-primary" onclick="claimOwnerAccess()">Claim Owner Access</button>
+        </div>
+      </div>
+      <a href="terms.html" target="_blank" class="btn btn-ghost" style="margin-top:16px;text-decoration:none;text-align:center;display:block;">📄 Terms & Privacy</a>
+      <button class="btn btn-ghost" style="margin-top:10px;color:var(--rose);border-color:var(--rose-soft);" onclick="doLogout()">Log out</button>
+    </div>
+
+  </div>
+
+  <!-- Admin-added custom ad scripts (app_bottom placement) render here -->
+  <div id="customAdSlotAppBottom"></div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" data-panel="dashboard" onclick="switchTab('dashboard')"><span class="ic">🏠</span><span class="lb">Home</span></button>
+    <button class="nav-btn" data-panel="earn" onclick="switchTab('earn')"><span class="ic">🎬</span><span class="lb">Earn</span></button>
+    <button class="nav-btn" data-panel="refer" onclick="switchTab('refer')"><span class="ic">👥</span><span class="lb">Refer</span></button>
+    <button class="nav-btn" data-panel="leaderboard" onclick="switchTab('leaderboard')"><span class="ic">🏆</span><span class="lb">Rank</span></button>
+    <button class="nav-btn" data-panel="wallet" onclick="switchTab('wallet')"><span class="ic">👛</span><span class="lb">Wallet</span></button>
+    <button class="nav-btn" data-panel="profile" onclick="switchTab('profile')"><span class="ic">👤</span><span class="lb">Profile</span></button>
+  </div>
+</div>
+
+<!-- ================= WATCH-AD MODAL (spinner = Monetag loading; countdown+Claim = external link ads) ================= -->
+<div class="modal-overlay" id="watchModal">
+  <div class="modal-box">
+    <div class="timer-ring" id="timerRing"></div>
+    <div id="linkCountdownNum" style="display:none;font-family:'Fraunces',serif;font-size:44px;font-weight:700;color:var(--emerald-dark);margin:0 auto 14px;">15</div>
+    <h3 style="margin:0 0 6px;font-size:17px;" id="watchAdTitle">বিজ্ঞাপন লোড হচ্ছে…</h3>
+    <p style="font-size:12px;color:var(--muted);margin:0;" id="watchAdSub">একটু অপেক্ষা করো</p>
+    <button class="btn btn-primary" id="linkClaimBtn" style="display:none;margin-top:16px;" disabled onclick="finishLinkWatch()">অপেক্ষা করো…</button>
+    <div class="switch-row" id="linkCancelRow" style="display:none;margin-top:10px;"><a onclick="cancelLinkWatch()">Cancel</a></div>
+  </div>
+</div>
+
+<!-- ================= SUPPORT MODAL ================= -->
+<div class="modal-overlay" id="supportModal">
+  <div class="modal-box" style="text-align:left;">
+    <h3 style="margin:0 0 14px;font-size:17px;">Support</h3>
+    <div id="supportChannelsList"><div class="empty">কোনো support channel সেট করা নেই</div></div>
+    <button class="btn btn-ghost" style="margin-top:16px;" onclick="closeSupportModal()">Close</button>
+  </div>
+</div>
+
+<!-- ================= WITHDRAWAL CONFIRMATION MODAL ================= -->
+<div class="modal-overlay" id="withdrawConfirmModal">
+  <div class="modal-box">
+    <h3 style="margin:0 0 6px;font-size:17px;">Withdrawal নিশ্চিত করো</h3>
+    <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">একবার পাঠালে বাতিল করা যাবে না — সব ঠিক আছে কিনা আবার দেখে নাও।</p>
+    <div style="text-align:left;background:var(--paper);border-radius:12px;padding:14px;font-size:14px;">
+      <div class="profile-row"><span class="k">Method</span><span class="v" id="wdConfirmMethod">—</span></div>
+      <div class="profile-row"><span class="k">Account</span><span class="v" id="wdConfirmAccount">—</span></div>
+      <div class="profile-row" style="border-bottom:none;"><span class="k">Amount</span><span class="v" id="wdConfirmAmount">৳0</span></div>
+    </div>
+    <div class="modal-actions" style="display:flex;gap:10px;margin-top:18px;">
+      <button class="btn btn-ghost" style="flex:1;" onclick="closeWithdrawConfirm()">Cancel</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="confirmWithdrawalSubmit()">নিশ্চিত করো</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   FIREBASE CONFIG — paste your project's config object here.
+   Firebase Console → Project settings → General → Your apps → SDK setup
+===================================================================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyAbXvdQrghhgdDtjIaZpHLm6hMQh7cT-mw",
+  authDomain: "earning-bot-f2f4e.firebaseapp.com",
+  projectId: "earning-bot-f2f4e",
+  storageBucket: "earning-bot-f2f4e.firebasestorage.app",
+  messagingSenderId: "307533837665",
+  appId: "1:307533837665:web:c2fd628a7a98369e968120"
+};
+firebase.initializeApp(firebaseConfig);
+
+/* ===================================================================
+   CUSTOM AD SCRIPTS (admin-added, no-code) ----------------
+   Renders whatever admin pastes into admin-panel.html's "Ad Scripts"
+   tab into the matching slot below. Setting innerHTML directly does
+   NOT execute embedded <script> tags (browsers block that for
+   security), so each script node is manually recreated and
+   re-appended — that's the only way a pasted ad network snippet
+   actually runs.
+=================================================================== */
+const AD_SLOT_ID = { login:'customAdSlotLogin', app_top:'customAdSlotAppTop', app_bottom:'customAdSlotAppBottom', dashboard_middle:'customAdSlotDashboard' };
+const injectedAdScriptIds = new Set();
+function injectAdSnippet(containerId, html){
+  const container = document.getElementById(containerId);
+  if(!container) return;
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = html;
+  Array.from(wrapper.childNodes).forEach(node=>{
+    if(node.tagName === 'SCRIPT'){
+      const s = document.createElement('script');
+      Array.from(node.attributes).forEach(attr=>s.setAttribute(attr.name, attr.value));
+      s.textContent = node.textContent;
+      container.appendChild(s);
+    }else{
+      container.appendChild(node);
+    }
+  });
+}
+function injectCustomAdScripts(scripts, placement){
+  if(!Array.isArray(scripts)) return;
+  const slotId = AD_SLOT_ID[placement];
+  if(!slotId) return;
+  scripts
+    .filter(s => s.enabled !== false && s.placement === placement && !injectedAdScriptIds.has(s.id))
+    .forEach(s => {
+      injectedAdScriptIds.add(s.id);
+      injectAdSnippet(slotId, s.code);
+    });
+}
+// Pre-login fetch — the login screen renders BEFORE any auth state
+// exists, so this is a one-time plain get() (not a live listener) run
+// immediately on page load, independent of whether the user ever logs
+// in. Relies on config/settings being publicly readable (see
+// firestore.rules) since there's no signed-in user yet at this point.
+firebase.firestore().collection('config').doc('settings').get()
+  .then(doc => injectCustomAdScripts((doc.data()||{}).customAdScripts, 'login'))
+  .catch(()=>{ /* best-effort — login screen works fine without it */ });
+
+// PWA — registers the pass-through service worker (sw.js) so "Add to
+// Home Screen" is available. This does NOT enable offline use; see the
+// comment at the top of sw.js.
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{ /* installability is best-effort; app works fine without it */ });
+  });
+}
+
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+/* ===================================================================
+   FCM PUSH NOTIFICATIONS — replaces the old in-app bell system. This
+   lets a message reach the user's phone even when the app is fully
+   closed, which a Firestore-polled in-app bell can never do.
+
+   REQUIRED SETUP BEFORE THIS WORKS (admin, one-time):
+   1. Firebase Console -> Project settings -> Cloud Messaging ->
+      "Web Push certificates" -> Generate key pair. Paste that key
+      below as VAPID_KEY.
+   2. The actual SENDING of a push when the admin clicks "Send" in
+      admin-panel.html requires a Cloud Function (Blaze plan) — a
+      browser can never safely hold the credentials needed to call
+      Google's FCM send API directly (that would expose them to
+      anyone who views this page's source). See /functions/index.js
+      in this delivery for the ready-to-deploy Cloud Function; deploy
+      it once Blaze is enabled and this becomes fully live. Until
+      then, this code correctly REQUESTS permission and SAVES each
+      device's token — that part works today — but no push will
+      actually arrive until the Cloud Function is deployed.
+=================================================================== */
+const VAPID_KEY = 'PASTE_YOUR_FIREBASE_VAPID_KEY_HERE';
+let messaging = null;
+try{
+  if(firebase.messaging.isSupported()) messaging = firebase.messaging();
+}catch(_e){ /* unsupported browser (e.g. some iOS webviews) — app works fine without push */ }
+
+async function requestNotificationPermissionAndSaveToken(){
+  if(!messaging || !currentUser) return;
+  if(VAPID_KEY === 'PASTE_YOUR_FIREBASE_VAPID_KEY_HERE'){
+    console.warn('FCM: VAPID_KEY not set yet — skipping push registration.');
+    return;
+  }
+  try{
+    const permission = await Notification.requestPermission();
+    if(permission !== 'granted') return;
+    const registration = await navigator.serviceWorker.ready;
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY, serviceWorkerRegistration: registration });
+    if(!token) return;
+    // One doc per device token, so a user logged in on multiple phones
+    // gets the push on all of them — see firestore.rules for the write
+    // rule (a user may only ever write their OWN tokens).
+    await db.collection('fcmTokens').doc(token).set({
+      userId: currentUser.uid,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }catch(e){
+    console.warn('FCM token registration failed (non-fatal):', e);
+  }
+}
+
+// Foreground messages (app open, tab focused) — FCM does NOT show a
+// native OS notification automatically in this case, so we show our
+// own toast instead. Background/closed-app notifications are handled
+// entirely by sw.js (the service worker), independent of this page
+// being open at all.
+if(messaging){
+  messaging.onMessage((payload)=>{
+    const title = payload?.notification?.title || payload?.data?.title || 'Notification';
+    showToast(title);
+  });
+}
+
+
+let currentUser = null;
+let userDoc = null;
+let adsCache = [];
+let claimsCache = [];
+let withdrawalsCache = [];
+let referralBonusesCache = [];
+let referralBonusesAsNewUserCache = [];
+let lifetimeLockedAdIds = new Set();
+let withdrawalRules = { minWithdrawal: 100, maxWithdrawal: 0, maxRequestsPerDay: 0, maxRequestsPerWeek: 0, minAdsRequired: 0, minReferralsRequired: 0 };
+let streakConfig = { enabled: false, perDay: 0, capDays: 1 };
+let selectedWithdrawMethod = "bKash";
+let unsubscribers = [];
+
+// FIX — set while a registration is in-flight (auth account created but the
+// Firestore transaction for users/phoneRegistry/referralCodes hasn't
+// resolved yet). onAuthStateChanged uses this to show a loading screen
+// instead of the main app (which would render with an empty/undefined
+// userDoc) or the auth screen (which would flash if the transaction later
+// fails and rolls back).
+let registrationInFlight = false;
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+/* ---------------- Sound + vibration feedback on earning ----------------
+   A short generated beep (Web Audio API — no audio file to host or
+   load) plus a phone vibration, played whenever a reward is actually
+   credited. Both are best-effort: some browsers block audio until the
+   user has interacted with the page at least once, and vibration only
+   exists on phones — neither failing should ever block the actual
+   credit, which has already happened by the time this runs. */
+function playEarnFeedback(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.25);
+  }catch(_e){ /* audio unavailable — silent is fine */ }
+  try{
+    if(navigator.vibrate) navigator.vibrate(120);
+  }catch(_e){ /* vibration unavailable — fine */ }
+}
+
+/* Persistent error banner — used for Firestore listener errors (permission
+   denied, missing index, offline, etc). Unlike showToast() this stays on
+   screen until dismissed, so the full message (including any Firebase
+   "create index" link) can be read and copied on a phone. */
+function showError(context, err){
+  console.error(context, err);
+  const banner = document.getElementById('errorBanner');
+  const text = document.getElementById('errorBannerText');
+  const rawMsg = (err && err.message) ? err.message : String(err);
+  // A "requires an index" message is an expected, one-time Firebase setup
+  // step (tap the link, tap Create Index), not a code bug — worth saying
+  // plainly so it doesn't look like something is broken.
+  text.textContent = rawMsg.indexOf('requires an index') !== -1
+    ? '[' + context + '] একবারের সেটআপ লাগবে — নিচের লিংকে ট্যাপ করে Create Index চাপো: ' + rawMsg
+    : '[' + context + '] ' + rawMsg;
+  banner.style.display = 'block';
+}
+
+/* ---------------- Auth view toggles ---------------- */
+function hideAllAuthViews(){
+  document.getElementById('loginView').style.display='none';
+  document.getElementById('registerView').style.display='none';
+  document.getElementById('forgotView').style.display='none';
+}
+function showRegister(){ hideAllAuthViews(); document.getElementById('registerView').style.display='block'; }
+
+// FIX — referral link auto-fill: someone.com/user-panel.html?ref=NIROB4F2
+// opens straight to the register view with that code already filled in,
+// instead of the sharer's friend having to type it in by hand.
+(function autoFillReferralFromUrl(){
+  const params = new URLSearchParams(window.location.search);
+  const ref = params.get('ref');
+  if(ref){
+    document.getElementById('regReferral').value = ref.trim().toUpperCase();
+    showRegister();
+  }
+})();
+function showLogin(){ hideAllAuthViews(); document.getElementById('loginView').style.display='block'; }
+function showForgot(){ hideAllAuthViews(); document.getElementById('forgotView').style.display='block'; document.getElementById('forgotError').style.display='none'; }
+
+async function doForgotPassword(){
+  const email = document.getElementById('forgotEmail').value.trim();
+  const errBox = document.getElementById('forgotError');
+  errBox.style.display='none';
+  if(!email){ errBox.textContent='Enter your email.'; errBox.style.display='block'; return; }
+  const btn = document.getElementById('forgotBtn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try{
+    // Firebase's built-in password reset — email only, free on every plan,
+    // nothing to configure or pay for.
+    await auth.sendPasswordResetEmail(email);
+    showToast('Reset link sent — check your email (and spam folder).');
+    showLogin();
+  }catch(e){
+    errBox.textContent = friendlyAuthError(e);
+    errBox.style.display='block';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Send reset link';
+  }
+}
+
+// Accepts local "01XXXXXXXXX" or a number already including the country
+// code, and normalizes it so the same number always looks identical in
+// Firestore (e.g. "01712345678" and "+8801712345678" would otherwise count
+// as two different numbers for the uniqueness check below). Falls back to
+// the raw text if it doesn't look like a BD mobile number, so formatting
+// quirks never hard-block someone from signing up.
+function normalizeBdPhone(raw){
+  const digits = (raw||'').replace(/[^\d]/g, '');
+  if(digits.length === 11 && digits.startsWith('0')) return '+880' + digits.slice(1);
+  if(digits.length === 13 && digits.startsWith('880')) return '+' + digits;
+  if(digits.length === 10) return '+880' + digits;
+  return null;
+}
+
+/* ---------------- Register ----------------
+   No SMS/OTP — that requires Firebase's paid Blaze plan and per-message
+   cost, which isn't an option here. What this keeps for free: the phone
+   number typed at signup can only ever be used for ONE account, enforced
+   by phoneRegistry/{phone} being a create-only document (same one-time
+   pattern as the admin bootstrap lock — see firestore.rules). It doesn't
+   prove the number is real, only that it hasn't been used before — a much
+   weaker guarantee than OTP, but a genuinely free one. If fake-account
+   farming keeps happening in practice, the admin panel is where to add
+   manual detection (e.g. flagging users sharing an unverified number
+   pattern) — cheaper to review by hand at this scale than to pay per SMS. */
+async function doRegister(){
+  const name = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const phoneRaw = document.getElementById('regPhone').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const referralInput = document.getElementById('regReferral').value.trim().toUpperCase();
+  const errBox = document.getElementById('registerError');
+  errBox.style.display='none';
+
+  if(!name || !email || !phoneRaw || password.length < 6){
+    errBox.textContent = 'Please fill every field. Password needs 6+ characters.';
+    errBox.style.display='block';
+    return;
+  }
+  // Previously fell back to the raw typed text when this didn't match a
+  // recognized format — meaning the same number typed two slightly
+  // different ways (extra space, missing digit, etc.) would count as two
+  // different numbers, letting someone bypass the one-account-per-phone
+  // lock. Now registration just doesn't proceed until it's a valid one.
+  const phone = normalizeBdPhone(phoneRaw);
+  if(!phone){
+    errBox.textContent = 'সঠিক মোবাইল নম্বর দাও (যেমন 01712345678)।';
+    errBox.style.display='block';
+    return;
+  }
+
+  const btn = document.getElementById('registerBtn');
+  btn.disabled = true; btn.textContent = 'Creating…';
+  // FIX — flip this on BEFORE createUserWithEmailAndPassword, since that
+  // call itself fires onAuthStateChanged the instant it succeeds, well
+  // before the transaction below has run.
+  registrationInFlight = true;
+
+  try{
+    const cred = await auth.createUserWithEmailAndPassword(email, password);
+    const uid = cred.user.uid;
+    /* Referral code no longer depends on the name — the old version stripped
+       everything except A-Z/a-z, so Bengali names (most of our users) always
+       collapsed to the literal prefix "USER", making collisions between
+       users far more likely than intended. Using more of the random uid
+       instead keeps codes short, unique enough for this app's scale, and
+       works the same regardless of what script the name is written in. */
+    const myCode = 'TE' + uid.slice(0,6).toUpperCase();
+
+    // Resolve referrer (optional) — look up which uid owns this referral
+    // code via a direct doc lookup, NOT a `where('referralCode',...)` query
+    // against `users`. That query would be rejected by Firestore before it
+    // even runs: the users read rule only allows reading YOUR OWN doc (or
+    // admin), and Firestore requires a rule to provably cover every
+    // possible match for a filtered query — since referralCode could
+    // belong to any other user, it can't prove that, so it denies the
+    // whole query. referralCodes/{code} sidesteps this by being a plain
+    // code→uid lookup table anyone signed in can read directly by ID.
+    let referredBy = null;
+    if(referralInput){
+      const codeDoc = await db.collection('referralCodes').doc(referralInput).get();
+      if(codeDoc.exists) referredBy = codeDoc.data().uid;
+    }
+
+    // Pre-fetch bonus amounts outside the transaction — config/settings
+    // rarely changes, and the rules already fall back the same way if
+    // it's missing, so this doesn't need to be read transactionally.
+    let referrerAmount = 20, newUserAmount = 10;
+    if(referredBy){
+      const settingsSnap = await db.collection('config').doc('settings').get();
+      const s = settingsSnap.exists ? settingsSnap.data() : {};
+      referrerAmount = s.referrerBonus ?? 20;
+      newUserAmount = s.newUserBonus ?? 10;
+    }
+
+    // users doc + phoneRegistry lock + own referralCodes entry + (if
+    // referred) the referral bonus doc — ALL written together now.
+    // Previously the referral bonus was a separate write AFTER this
+    // transaction: if THAT write failed for any reason, the cleanup logic
+    // below would delete the auth account, but users/phoneRegistry/
+    // referralCodes from the transaction that had ALREADY succeeded would
+    // stay committed — permanently locking that phone number to a
+    // half-created account nobody could actually log into. Bundling
+    // everything into one transaction makes it genuinely all-or-nothing.
+    await db.runTransaction(async (tx)=>{
+      const phoneLockRef = db.collection('phoneRegistry').doc(phone);
+      const phoneLockSnap = await tx.get(phoneLockRef);
+      if(phoneLockSnap.exists){
+        throw new Error('PHONE_TAKEN');
+      }
+      tx.set(db.collection('users').doc(uid), {
+        name, email, phone,
+        referralCode: myCode,
+        referredBy: referredBy,
+        suspended: false,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      tx.set(phoneLockRef, { uid, claimedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      tx.set(db.collection('referralCodes').doc(myCode), { uid });
+      if(referredBy){
+        tx.set(db.collection('referralBonuses').doc(uid), {
+          referrerId: referredBy,
+          newUserId: uid,
+          referrerAmount: referrerAmount,
+          newUserAmount: newUserAmount,
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    });
+    // FIX — transaction committed successfully: safe to let
+    // onAuthStateChanged's normal flow render the app now. If we left this
+    // flag on, a fresh login later would get stuck on the loading screen.
+    registrationInFlight = false;
+  }catch(e){
+    registrationInFlight = false;
+    // If the auth account got created but the Firestore writes failed
+    // (e.g. PHONE_TAKEN), don't leave a profile-less orphan account behind.
+    if(auth.currentUser && auth.currentUser.email === email){
+      try{ await auth.currentUser.delete(); }catch(_ignored){}
+    }
+    errBox.textContent = e.message === 'PHONE_TAKEN'
+      ? 'This phone number is already registered. Try logging in instead.'
+      : friendlyAuthError(e);
+    errBox.style.display='block';
+    // FIX — the delete() above signs the user back out and fires
+    // onAuthStateChanged again on its own, so the auth screen reappears
+    // automatically. Nothing further to do here.
+  }finally{
+    btn.disabled = false; btn.textContent = 'Create account';
+  }
+}
+
+/* ---------------- Login ---------------- */
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errBox = document.getElementById('loginError');
+  errBox.style.display='none';
+  const btn = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = 'Logging in…';
+  try{
+    await auth.signInWithEmailAndPassword(email, password);
+  }catch(e){
+    errBox.textContent = friendlyAuthError(e);
+    errBox.style.display='block';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Log in';
+  }
+}
+
+function doLogout(){
+  unsubscribers.forEach(u=>u());
+  unsubscribers = [];
+  if(leaderboardUnsub){ leaderboardUnsub(); leaderboardUnsub = null; }
+  if(cooldownTickerInterval){ clearInterval(cooldownTickerInterval); cooldownTickerInterval = null; }
+  streakCheckDone = false;
+  auth.signOut();
+}
+
+function friendlyAuthError(e){
+  const map = {
+    'auth/email-already-in-use':'That email is already registered — try logging in.',
+    'auth/invalid-email':'That email address looks invalid.',
+    'auth/weak-password':'Password should be at least 6 characters.',
+    'auth/user-not-found':'No account found with that email.',
+    'auth/wrong-password':'Incorrect password.',
+    'auth/invalid-credential':'Incorrect email or password.',
+    'auth/too-many-requests':'Too many attempts — wait a bit and try again.'
+  };
+  return map[e.code] || 'Something went wrong. Please try again.';
+}
+
+/* ---------------- Auth state ---------------- */
+auth.onAuthStateChanged(async (user)=>{
+  // FIX — while doRegister()'s transaction is still running, show the
+  // loading screen instead of either the main app (userDoc would still be
+  // null/undefined → broken-looking UI) or the auth screen (a visible
+  // flash back and forth if the transaction is about to fail and roll
+  // back). This is the actual fix for the registration-flash issue.
+  if(registrationInFlight){
+    document.getElementById('authScreen').style.display='none';
+    document.getElementById('app').style.display='none';
+    document.getElementById('appLoading').style.display='flex';
+    return;
+  }
+  if(user){
+    currentUser = user;
+    document.getElementById('authScreen').style.display='none';
+    document.getElementById('appLoading').style.display='none';
+    document.getElementById('app').style.display='flex';
+    await loadUserAndListen();
+  }else{
+    currentUser = null;
+    document.getElementById('app').style.display='none';
+    document.getElementById('appLoading').style.display='none';
+    document.getElementById('authScreen').style.display='block';
+  }
+});
+
+/* ---------------- Data loading ---------------- */
+async function loadUserAndListen(){
+  const uid = currentUser.uid;
+  checkAdminBootstrap();
+  requestNotificationPermissionAndSaveToken();
+
+  const userUnsub = db.collection('users').doc(uid).onSnapshot(doc=>{
+    userDoc = doc.data();
+    if(!userDoc) return;
+    document.getElementById('heroName').textContent = 'Welcome back, ' + userDoc.name.split(' ')[0];
+    document.getElementById('profName').textContent = userDoc.name;
+    document.getElementById('profEmail').textContent = userDoc.email;
+    document.getElementById('profPhone').textContent = userDoc.phone;
+    document.getElementById('referCode').textContent = userDoc.referralCode;
+    if(userDoc.createdAt) document.getElementById('profJoined').textContent = userDoc.createdAt.toDate().toLocaleDateString();
+    if(userDoc.suspended){ showToast('Your account is under review. Contact support.'); }
+  }, (err)=>showError('users', err));
+  unsubscribers.push(userUnsub);
+
+  const adsUnsub = db.collection('ads').where('enabled','==',true).onSnapshot(snap=>{
+    adsCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderAds();
+  }, (err)=>showError('ads', err));
+  unsubscribers.push(adsUnsub);
+
+  // orderBy() removed from both queries below on purpose — combined with
+  // where('userId',...) it needs a composite index, which is exactly the
+  // setup step that's been causing trouble. A plain where() alone needs no
+  // index at all (Firestore indexes single fields automatically), so
+  // sorting/limiting here in JS instead means these just work with zero
+  // Firebase Console setup, and stay correct even if an index is deleted.
+  const claimsUnsub = db.collection('claims').where('userId','==',uid).onSnapshot(snap=>{
+    claimsCache = snap.docs
+      .map(d=>({id:d.id, ...d.data()}))
+      .sort((a,b)=>(b.timestamp?.toMillis()||0)-(a.timestamp?.toMillis()||0))
+      .slice(0, 200);
+    claimsLoaded = true;
+    recompute();
+  }, (err)=>showError('claims', err));
+  unsubscribers.push(claimsUnsub);
+
+  // "One-time only" ads — which ones THIS user has already permanently
+  // used up. Backed by firestore.rules (lifetimeLocks/{uid}_{adId} is a
+  // create-only doc, so this is the real, database-level source of truth
+  // — this listener just mirrors it into the UI so the button can show
+  // "already claimed" instead of a user finding out only after tapping.
+  const lifetimeLocksUnsub = db.collection('lifetimeLocks').where('userId','==',uid).onSnapshot(snap=>{
+    lifetimeLockedAdIds = new Set(snap.docs.map(d=>d.data().adId));
+    renderAds();
+  }, (err)=>showError('lifetimeLocks', err));
+  unsubscribers.push(lifetimeLocksUnsub);
+
+  const streakUnsub = db.collection('streaks').doc(uid).onSnapshot(doc=>{
+    const d = doc.data();
+    const el = document.getElementById('streakDisplay');
+    if(d && d.currentStreak > 0){
+      document.getElementById('streakDays').textContent = d.currentStreak;
+      el.style.display = 'block';
+    }else{
+      el.style.display = 'none';
+    }
+  }, (err)=>showError('streaks', err));
+  unsubscribers.push(streakUnsub);
+
+  const wdUnsub = db.collection('withdrawals').where('userId','==',uid).onSnapshot(snap=>{
+    withdrawalsCache = snap.docs
+      .map(d=>({id:d.id, ...d.data()}))
+      .sort((a,b)=>(b.requestedAt?.toMillis()||0)-(a.requestedAt?.toMillis()||0));
+    withdrawalsLoaded = true;
+    recompute();
+  }, (err)=>showError('withdrawals', err));
+  unsubscribers.push(wdUnsub);
+
+  // referralBonuses is queried from BOTH sides: as the referrer (money
+  // earned by getting someone else to join) and as the new user (the
+  // one-time bonus for having joined via someone's code). Only the
+  // referrer side was ever queried before, so a user's own signup bonus
+  // existed in Firestore but was never actually counted in their balance.
+  const refUnsub = db.collection('referralBonuses').where('referrerId','==',uid).onSnapshot(snap=>{
+    referralBonusesCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    referrerBonusesLoaded = true;
+    recompute();
+  }, (err)=>showError('referralBonuses', err));
+  unsubscribers.push(refUnsub);
+
+  const refAsNewUserUnsub = db.collection('referralBonuses').where('newUserId','==',uid).onSnapshot(snap=>{
+    referralBonusesAsNewUserCache = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    newUserBonusLoaded = true;
+    recompute();
+  }, (err)=>showError('referralBonuses', err));
+  unsubscribers.push(refAsNewUserUnsub);
+
+  // Same config/settings doc as the referral bonus amounts, just the
+  // withdrawal-rules fields — kept live (not a one-time get like the
+  // registration flow uses) so the form reflects whatever admin has set
+    withdrawalRules = {
+      minWithdrawal: s.minWithdrawal ?? 100,
+      maxWithdrawal: s.maxWithdrawal ?? 0,
+      maxRequestsPerDay: s.maxRequestsPerDay ?? 0,
+      maxRequestsPerWeek: s.maxRequestsPerWeek ?? 0,
+      minAdsRequired: s.minAdsRequired ?? 0,
+      minReferralsRequired: s.minReferralsRequired ?? 0
+    };
+    streakConfig = {
+      enabled: s.streakBonusEnabled ?? false,
+      perDay: s.streakBonusPerDay ?? 0,
+      capDays: s.streakBonusCapDays ?? 1
+    };
+    maybeAwardDailyStreakBonus();
+    injectCustomAdScripts(s.customAdScripts, 'app_top');
+    injectCustomAdScripts(s.customAdScripts, 'app_bottom');
+    injectCustomAdScripts(s.customAdScripts, 'dashboard_middle');
+    const amountField = document.getElementById('wdAmount');
+    if(amountField) amountField.placeholder = 'Min. withdrawal ৳' + withdrawalRules.minWithdrawal;
+
+    // Multi-channel support list. Falls back to the OLD single
+    // supportTelegram/supportWhatsapp fields if supportChannels hasn't
+    // been migrated yet (admin-panel.html migrates it automatically the
+    // first time an admin opens the Overview tab, but this fallback means
+    // users see their support contacts even before that first admin visit).
+    let channels = Array.isArray(s.supportChannels) ? s.supportChannels : [];
+    if(!channels.length){
+      const legacy = [];
+      if(s.supportTelegram) legacy.push({ type:'telegram', label:'Telegram', value:s.supportTelegram });
+      if(s.supportWhatsapp) legacy.push({ type:'whatsapp', label:'WhatsApp', value:s.supportWhatsapp });
+      channels = legacy;
+    }
+    renderSupportChannelsForUser(channels);
+  }, (err)=>showError('config', err));
+  unsubscribers.push(wdRulesUnsub);
+}
+
+/* ---------------- Balance computation (client-side, from audit trail) ----------------
+   claimsLoaded / withdrawalsLoaded / referrerBonusesLoaded / newUserBonusLoaded track
+   whether each listener has delivered its first real snapshot. Until all four have
+   (e.g. a listener is stuck behind a missing Firestore index), balance fields show
+   "…" instead of a real number — showing ৳0 while data is still loading looked
+   exactly like money not being credited, when the actual claim/bonus was sitting in
+   Firestore the whole time. */
+let claimsLoaded = false, withdrawalsLoaded = false, referrerBonusesLoaded = false, newUserBonusLoaded = false;
+
+function recompute(){
+  // "Friends joined" / "Referral earnings" only depend on referralBonusesCache
+  // (the referrer-side listener) — nothing to do with claims or withdrawals.
+  // Showing these as soon as THEY load (instead of waiting on everything)
+  // means a referral can be confirmed as working even while claims is still
+  // stuck behind its own separate index issue.
+  if(referrerBonusesLoaded){
+    const earnedAsReferrer = referralBonusesCache.reduce((s,r)=>s+(r.referrerAmount||0),0);
+    document.getElementById('referCount').textContent = referralBonusesCache.length;
+    document.getElementById('referEarnings').textContent = fmt(earnedAsReferrer);
+  }
+
+  renderEarnHistory();
+
+  if(!claimsLoaded || !withdrawalsLoaded || !referrerBonusesLoaded || !newUserBonusLoaded){
+    ['topBalance','heroBalance','walletBalance','walletTotal'].forEach(id=>{ document.getElementById(id).textContent = '…'; });
+    return;
+  }
+
+  const earnedFromClaims = claimsCache.reduce((s,c)=>s+(c.amount||0),0);
+  const earnedAsReferrer = referralBonusesCache.reduce((s,r)=>s+(r.referrerAmount||0),0);
+  const earnedAsNewUser = referralBonusesAsNewUserCache.reduce((s,r)=>s+(r.newUserAmount||0),0);
+  const totalEarned = earnedFromClaims + earnedAsReferrer + earnedAsNewUser;
+
+  const reserved = withdrawalsCache
+    .filter(w=>w.status==='pending' || w.status==='approved')
+    .reduce((s,w)=>s+(w.amount||0),0);
+
+  const available = Math.max(0, totalEarned - reserved);
+
+  const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
+  const todayEarned = claimsCache
+    .filter(c=>c.timestamp && c.timestamp.toDate() >= startOfDay)
+    .reduce((s,c)=>s+(c.amount||0),0);
+
+  document.getElementById('topBalance').textContent = fmt(available);
+  document.getElementById('heroBalance').textContent = fmt(available);
+  document.getElementById('walletBalance').textContent = fmt(available);
+  document.getElementById('walletTotal').textContent = fmt(totalEarned);
+  document.getElementById('statToday').textContent = '৳' + fmt(todayEarned);
+  document.getElementById('statAdsWatched').textContent = claimsCache.filter(c=>c.adId!=='referral_bonus').length;
+
+  renderTxns();
+
+  // FIX — leaderboard now shows TODAY's numbers only (admin's answer:
+  // "আজ দিনে... সেই দিনের মোট ad, ইনকাম, রেফার থাকবে"), not all-time
+  // totals. earnedToday mirrors the same "Today's earning" stat card
+  // above (all claims today) plus any referral bonuses received today
+  // (both as the referrer and as a new signup) — referral money is
+  // income too.
+  const referralsEarnedToday = referralBonusesCache
+    .filter(r=>r.timestamp && r.timestamp.toDate() >= startOfDay)
+    .reduce((s,r)=>s+(r.referrerAmount||0),0);
+  const newUserBonusToday = referralBonusesAsNewUserCache
+    .filter(r=>r.timestamp && r.timestamp.toDate() >= startOfDay)
+    .reduce((s,r)=>s+(r.newUserAmount||0),0);
+  const adsWatchedToday = claimsCache
+    .filter(c=>c.adId!=='admin_bonus' && c.timestamp && c.timestamp.toDate() >= startOfDay).length;
+  const referralsCountToday = referralBonusesCache
+    .filter(r=>r.timestamp && r.timestamp.toDate() >= startOfDay).length;
+  updateOwnLeaderboardEntry(todayEarned + referralsEarnedToday + newUserBonusToday, adsWatchedToday, referralsCountToday);
+}
+function fmt(n){ return Math.round(n).toLocaleString('en-US'); }
+
+/* ---------------- Leaderboard — this user's own TODAY-only aggregate write ----------------
+   Each user writes ONLY their own leaderboardDaily/{today}_{uid} doc (see
+   firestore.rules), using stats already computed here from data already
+   loaded locally — no extra reads. Because the doc id embeds today's
+   date, tomorrow this simply becomes a NEW document — nothing to reset,
+   no cron job, no stale-data risk. lastLeaderboardWrite avoids
+   re-writing on every snapshot tick when nothing actually changed. */
+function todayDateStr(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+// Privacy: leaderboard shows first name only (admin's answer — e.g.
+// "রাকিব" / "Rakib", not the full name), regardless of script.
+function firstNameOnly(fullName){
+  return (fullName||'User').trim().split(/\s+/)[0];
+}
+let lastLeaderboardWrite = null;
+function updateOwnLeaderboardEntry(earnedToday, adsWatchedToday, referralsToday){
+  if(!userDoc || !currentUser) return;
+  const today = todayDateStr();
+  const roundedEarned = Math.round(Math.max(0, earnedToday));
+  const sig = today + '|' + userDoc.name + '|' + adsWatchedToday + '|' + referralsToday + '|' + roundedEarned;
+  if(sig === lastLeaderboardWrite) return;
+  lastLeaderboardWrite = sig;
+  db.collection('leaderboardDaily').doc(today + '_' + currentUser.uid).set({
+    date: today,
+    displayName: firstNameOnly(userDoc.name),
+    adsWatchedToday: adsWatchedToday,
+    referralsToday: referralsToday,
+    earnedToday: roundedEarned
+  }, { merge: true }).catch(()=>{ lastLeaderboardWrite = null; /* retry on next recompute */ });
+}
+
+/* ---------------- Leaderboard tab rendering ---------------- */
+let leaderboardSort = 'earnedToday';
+let leaderboardUnsub = null;
+function setLeaderboardSort(field){
+  leaderboardSort = field;
+  document.getElementById('lbSortEarned').classList.toggle('sel', field==='earnedToday');
+  document.getElementById('lbSortAds').classList.toggle('sel', field==='adsWatchedToday');
+  document.getElementById('lbSortRef').classList.toggle('sel', field==='referralsToday');
+  listenLeaderboard();
+}
+// Lazy-started the first time the tab is opened, and re-started whenever
+// the sort changes. NOTE: where('date','==',today) + orderBy(sortField)
+// needs a Firestore composite index (one per sort field) — the very
+// first time each sort tab is opened after deploying this, expect the
+// existing "একবারের সেটআপ লাগবে" index-creation banner (see showError)
+// to appear once; tap its link, tap Create Index, and that sort stays
+// working from then on.
+function listenLeaderboard(){
+  if(leaderboardUnsub) leaderboardUnsub();
+  const el = document.getElementById('leaderboardList');
+  el.innerHTML = '<div class="empty">Loading…</div>';
+  leaderboardUnsub = db.collection('leaderboardDaily')
+    .where('date', '==', todayDateStr())
+    .orderBy(leaderboardSort, 'desc')
+    .limit(20)
+    .onSnapshot(snap=>{
+    const rows = snap.docs.map(d=>d.data());
+      if(!rows.length){ el.innerHTML = '<div class="empty">আজকে এখনো কেউ তালিকায় নেই</div>'; return; }
+      el.innerHTML = rows.map((r,i)=>`
+        <div class="txn-row">
+          <div class="txn-info">
+            <div class="t">#${i+1} ${escapeHtml(r.displayName||'User')}</div>
+            <div class="d">${r.adsWatchedToday||0} ads today · ${r.referralsToday||0} referrals today</div>
+          </div>
+          <div class="txn-amt pos">৳${fmt(r.earnedToday||0)}</div>
+        </div>`).join('');
+    }, (err)=>showError('leaderboard', err));
+}
+
+/* ---------------- Ads / Earn ---------------- */
+function claimsToday(adId){
+  const startOfDay = new Date(); startOfDay.setHours(0,0,0,0);
+  return claimsCache.filter(c=>c.adId===adId && c.timestamp && c.timestamp.toDate() >= startOfDay).length;
+}
+function lastClaimTime(adId){
+  const c = claimsCache.find(c=>c.adId===adId);
+  return c ? c.timestamp.toDate() : null;
+}
+function adStatus(ad){
+  // FIX — one-time-only ads: permanently blocked once lifetimeLockedAdIds
+  // has this ad's id, regardless of daily limit or cooldown state. The
+  // real enforcement is in firestore.rules; this is just the UI mirror of
+  // that same fact so the button reflects it immediately.
+  if(ad.oneTimeOnly && lifetimeLockedAdIds.has(ad.id)){
+    return { ok:false, label:'সম্পন্ন (একবারই)', remainMs:0 };
+  }
+  const usedToday = claimsToday(ad.id);
+  if(usedToday >= (ad.dailyLimit||1)) return { ok:false, label:'Daily limit reached', remainMs:0 };
+  const last = lastClaimTime(ad.id);
+  if(last){
+    // FIX — cooldownSeconds (minutes AND seconds combined) is now the
+    // source of truth; cooldownMinutes alone is kept only as a fallback
+    // for any ad document that predates this field.
+    const cooldownMs = (ad.cooldownSeconds != null ? ad.cooldownSeconds : (ad.cooldownMinutes||0)*60) * 1000;
+    const remain = cooldownMs - (Date.now() - last.getTime());
+    if(remain > 0) return { ok:false, label:formatCooldown(remain), remainMs:remain };
+  }
+  return { ok:true, label:'Watch', remainMs:0 };
+}
+// FIX — live cooldown display: "Wait 5m" only ever showed whole minutes
+// and never counted down on screen. This shows minutes AND seconds and
+// is re-called every second by the ticking interval below.
+function formatCooldown(remainMs){
+  const totalSec = Math.max(0, Math.ceil(remainMs/1000));
+  const m = Math.floor(totalSec/60), s = totalSec%60;
+  return 'Wait ' + (m>0 ? m+'m ' : '') + s + 's';
+}
+function renderAds(){
+  const lists = [document.getElementById('dashboardAdsList'), document.getElementById('earnAdsList')];
+  lists.forEach(list=>{
+    if(!adsCache.length){ list.innerHTML = '<div class="empty">No offers available right now — check back soon.</div>'; return; }
+    list.innerHTML = adsCache.map(ad=>{
+      const st = adStatus(ad);
+      return `<div class="card gold">
+        <div class="card-icon">🎬</div>
+        <div class="card-body">
+          <p class="card-title">${escapeHtml(ad.title)}${ad.oneTimeOnly?' <span style="font-size:10px;color:var(--rose);font-weight:800;">ONE-TIME</span>':''}</p>
+          <p class="card-desc">${escapeHtml(ad.description||'')} · ৳${ad.reward}${ad.type==='chain' ? ' · '+(ad.steps?ad.steps.length:0)+' steps' : ' · '+ad.durationSeconds+'s'}</p>
+        </div>
+        <button class="card-cta ${st.ok?'':'disabled-txt'}" data-ad-id="${ad.id}" ${st.ok?'':'disabled'} onclick="startWatch('${ad.id}')">${st.label}</button>
+      </div>`;
+    }).join('');
+  });
+  renderEarnHistory(); // ad titles here depend on adsCache too, so refresh on ad changes as well
+  startCooldownTicker();
+}
+
+/* FIX — live cooldown timer: a single shared setInterval (not one per
+   card) that runs once a second, recomputes each ad's remaining cooldown
+   directly against the button already in the DOM, and only triggers a
+   full renderAds() when a cooldown actually reaches zero (to flip the
+   button back to "Watch"). This avoids re-rendering the whole ad list
+   every second — with a couple thousand users each possibly having this
+   tab open, that matters. */
+let cooldownTickerInterval = null;
+function startCooldownTicker(){
+  if(cooldownTickerInterval) return; // already running — nothing to restart
+  cooldownTickerInterval = setInterval(()=>{
+    let anyExpired = false;
+    document.querySelectorAll('.card-cta[data-ad-id]').forEach(btn=>{
+      const ad = adsCache.find(a => a.id === btn.dataset.adId);
+      if(!ad) return;
+      const st = adStatus(ad);
+      if(st.remainMs > 0){
+        btn.textContent = st.label;
+      }else if(btn.disabled && st.ok){
+        anyExpired = true; // cooldown just ended — needs a real re-render to re-enable the button
+      }
+    });
+    if(anyExpired) renderAds();
+  }, 1000);
+}
+
+/* Which specific ad was watched, and for how much — separate from the
+   Wallet tab's combined transaction list, which only ever said generic
+   "Ad reward" and mixed in withdrawals. Falls back to a generic label if
+   the ad was since deleted, since its title wouldn't be in adsCache anymore. */
+function renderEarnHistory(){
+  const el = document.getElementById('earnHistoryList');
+  if(!el) return;
+  if(!claimsLoaded){ el.innerHTML = '<div class="empty">Loading…</div>'; return; }
+  const adClaims = claimsCache.filter(c => c.adId !== 'admin_bonus').slice(0, 50);
+  if(!adClaims.length){ el.innerHTML = '<div class="empty">এখনো কোনো ad দেখে টাকা claim করোনি</div>'; return; }
+  el.innerHTML = adClaims.map(c => {
+    const ad = adsCache.find(a => a.id === c.adId);
+    const title = ad ? ad.title : 'Ad reward';
+    const time = c.timestamp ? c.timestamp.toDate().toLocaleString() : '';
+    return `<div class="txn-row">
+      <div class="txn-info">
+        <div class="t">${escapeHtml(title)}</div>
+        <div class="d">${time}</div>
+      </div>
+      <div class="txn-amt pos">+৳${c.amount}</div>
+    </div>`;
+  }).join('');
+}
+
+/* Zone 10709966 — the function name Monetag's SDK exposes after loading */
+const MONETAG_SHOW_FN = 'show_10709966';
+
+/* Reward crediting below still trusts this SDK promise the instant it
+   resolves, so the user's balance updates immediately — but it's now
+   backed by a safety net: each attempt gets its own `ymid`, which becomes
+   the claims document's ID (see confirmClaim). Monetag's server-to-server
+   postback (once configured in the dashboard — see postback-receiver.gs)
+   reports back independently, by ymid, whether that specific view was
+   actually real/billable. If it wasn't, the claim gets flagged for review
+   instead of silently trusted forever — see postback-receiver.gs for the
+   receiving side of this. */
+function startWatch(adId){
+  const ad = adsCache.find(a=>a.id===adId);
+  if(!ad) return;
+  const st = adStatus(ad);
+  if(!st.ok){ showToast(st.label); return; }
+
+  if(ad.type === 'chain'){
+    startChainWatch(ad);
+    return;
+  }
+
+  if(ad.type === 'link'){
+    startLinkWatch(ad);
+    return;
+  }
+
+  const showAd = window[MONETAG_SHOW_FN];
+  if(typeof showAd !== 'function'){
+    showToast('বিজ্ঞাপন সিস্টেম লোড হয়নি — ইন্টারনেট চেক করে আবার চেষ্টা করো');
+    return;
+  }
+
+  document.getElementById('watchAdTitle').textContent = 'বিজ্ঞাপন লোড হচ্ছে…';
+  document.getElementById('watchModal').classList.add('show');
+
+  // ymid also becomes the claims document's own ID (see confirmClaim), so
+  // the Monetag postback receiver can later look up this exact attempt by
+  // ID and flag it if Monetag reports it wasn't a real, billable view.
+  const ymid = currentUser.uid + '_' + ad.id + '_' + Date.now();
+
+  showAd({ ymid })
+    .then((result)=>{
+      document.getElementById('watchModal').classList.remove('show');
+      // Monetag can resolve even when nothing billable was actually shown —
+      // reward_event_type tells us whether this view was real.
+      if(result && result.reward_event_type === 'not_valued'){
+        showToast('এই ভিউ থেকে রিওয়ার্ড পাওয়া যায়নি, আবার চেষ্টা করো');
+        return;
+      }
+      confirmClaim(ad, ymid);
+    })
+    .catch(()=>{
+      document.getElementById('watchModal').classList.remove('show');
+      showToast('বিজ্ঞাপন দেখানো যায়নি, একটু পর আবার চেষ্টা করো');
+    });
+}
+
+/* ---------------- Link-type ads (admin-provided URL instead of Monetag) ----------------
+   Opens ad.link in a new tab and runs a plain countdown for ad.durationSeconds
+   in this tab; Claim only becomes tappable once it hits zero. There's no way
+   to verify what happens in the other tab — same trust level Monetag's own
+   client-side callback already had, just without Monetag's own SDK-side
+   fraud filtering, so this is a place worth keeping an eye on via the Users
+   tab (suspend/adjust) if a particular link/user looks abused. */
+let linkWatchTimer = null;
+let linkWatchAd = null;
+let linkWatchYmid = null;
+
+function startLinkWatch(ad){
+  const opened = window.open(ad.link, '_blank');
+  if(!opened){
+    showToast('লিংক খোলা যায়নি — popup blocker বন্ধ করে আবার চেষ্টা করো');
+    return;
+  }
+
+  linkWatchAd = ad;
+  linkWatchYmid = currentUser.uid + '_' + ad.id + '_' + Date.now();
+
+  document.getElementById('timerRing').style.display = 'none';
+  document.getElementById('linkCountdownNum').style.display = 'block';
+  document.getElementById('watchAdTitle').textContent = 'লিংকে গিয়ে একটু সময় থাকো';
+  document.getElementById('watchAdSub').textContent = 'সময় শেষ হলে Claim বাটন চালু হবে';
+  const claimBtn = document.getElementById('linkClaimBtn');
+  claimBtn.style.display = 'block';
+  claimBtn.disabled = true;
+  claimBtn.textContent = 'অপেক্ষা করো…';
+  document.getElementById('linkCancelRow').style.display = 'block';
+  document.getElementById('watchModal').classList.add('show');
+
+  let remaining = ad.durationSeconds || 15;
+  document.getElementById('linkCountdownNum').textContent = remaining;
+  clearInterval(linkWatchTimer);
+  linkWatchTimer = setInterval(()=>{
+    remaining -= 1;
+    document.getElementById('linkCountdownNum').textContent = Math.max(remaining, 0);
+    if(remaining <= 0){
+      clearInterval(linkWatchTimer);
+      claimBtn.disabled = false;
+      claimBtn.textContent = 'Claim reward';
+    }
+  }, 1000);
+}
+
+function resetWatchModalVisuals(){
+  document.getElementById('timerRing').style.display = '';
+  document.getElementById('linkCountdownNum').style.display = 'none';
+  document.getElementById('linkClaimBtn').style.display = 'none';
+  document.getElementById('linkCancelRow').style.display = 'none';
+  // FIX — the chain-ad flow temporarily reassigns these two handlers
+  // (see runChainStep/finishChainStep/cancelChainFlow) so the SAME modal
+  // markup can be reused for both single-link ads and chain steps.
+  // Always restoring the plain single-link defaults here means the next
+  // time a normal 'link' ad is watched, it's back to its own handlers —
+  // not left wired to whatever the last chain step used.
+  document.getElementById('linkClaimBtn').onclick = finishLinkWatch;
+  const cancelLink = document.getElementById('linkCancelRow').querySelector('a');
+  if(cancelLink) cancelLink.onclick = cancelLinkWatch;
+}
+
+function finishLinkWatch(){
+  if(!linkWatchAd) return;
+  document.getElementById('watchModal').classList.remove('show');
+  resetWatchModalVisuals();
+  const ad = linkWatchAd, ymid = linkWatchYmid;
+  linkWatchAd = null; linkWatchYmid = null;
+  confirmClaim(ad, ymid);
+}
+
+function cancelLinkWatch(){
+  clearInterval(linkWatchTimer);
+  linkWatchAd = null; linkWatchYmid = null;
+  document.getElementById('watchModal').classList.remove('show');
+  resetWatchModalVisuals();
+}
+
+/* ---------------- Multi-step "chain" ads (Monetag -> Adsgram -> Adsterra
+   direct-link -> back to app, etc) ----------------
+   Each step is one of:
+     - {type:'monetag'} -> uses the SAME rewarded SDK as the plain
+       Monetag ad type. Its own resolved promise IS the verification
+       signal for that step (a real network confirmation, not a guess).
+     - {type:'adsgram'|'external'|'youtube', url, durationMinutes,
+       durationSeconds} -> opens the link in a new tab, then measures how
+       long THIS tab stayed hidden (visibilitychange) as a best-effort
+       proxy for "was actually on the linked page for the required
+       time." Not airtight -- nothing client-side can be -- but it is a
+       real measurement against a real requirement.
+   Every attempt, passed or failed, is logged to linkAdAttempts (see
+   firestore.rules) so the admin's Link-ad Analytics tab has a full
+   record, and a claim for a 'chain' ad can only ever be written
+   alongside a matching PASSED attempt -- enforced at the database
+   level, not just by this code choosing not to call confirmClaim. */
+let chainState = null;
+
+function startChainWatch(ad){
+  if(!Array.isArray(ad.steps) || !ad.steps.length){
+    showToast('এই ad-এর কোনো step সেট করা নেই — admin-কে জানাও');
+    return;
+  }
+  chainState = { ad, steps: ad.steps, index: 0, results: [] };
+  runChainStep();
+}
+
+function runChainStep(){
+  const { ad, steps, index } = chainState;
+  if(index >= steps.length){ finalizeChainFlow(); return; }
+  const step = steps[index];
+
+  if(step.type === 'monetag'){
+    document.getElementById('watchAdTitle').textContent = `Step ${index+1}/${steps.length}: বিজ্ঞাপন লোড হচ্ছে…`;
+    document.getElementById('watchAdSub').textContent = 'একটু অপেক্ষা করো';
+    document.getElementById('watchModal').classList.add('show');
+    const showAd = window[MONETAG_SHOW_FN];
+    if(typeof showAd !== 'function'){
+      document.getElementById('watchModal').classList.remove('show');
+      chainState.results.push({ type:'monetag', passed:false, requiredSeconds:0, measuredSeconds:0 });
+      showToast('বিজ্ঞাপন সিস্টেম লোড হয়নি');
+      finalizeChainFlow();
+      return;
+    }
+    const ymid = currentUser.uid + '_' + ad.id + '_chainstep' + index + '_' + Date.now();
+    showAd({ ymid })
+      .then((result)=>{
+        document.getElementById('watchModal').classList.remove('show');
+        const ok = !(result && result.reward_event_type === 'not_valued');
+        chainState.results.push({ type:'monetag', passed: ok, requiredSeconds:0, measuredSeconds: ok?1:0 });
+        if(!ok){ showToast('এই ধাপ সম্পন্ন হয়নি — আবার চেষ্টা করো'); finalizeChainFlow(); return; }
+        chainState.index++;
+        runChainStep();
+      })
+      .catch(()=>{
+        document.getElementById('watchModal').classList.remove('show');
+        chainState.results.push({ type:'monetag', passed:false, requiredSeconds:0, measuredSeconds:0 });
+        finalizeChainFlow();
+      });
+    return;
+  }
+
+  // External / Adsgram / YouTube step -- open + measure hidden-time.
+  const requiredMs = (step.durationMinutes||0)*60000 + (step.durationSeconds||0)*1000;
+  const opened = window.open(step.url, '_blank');
+  if(!opened){
+    showToast('পপআপ ব্লকার বন্ধ করে আবার চেষ্টা করো');
+    chainState.results.push({ type: step.type, passed:false, requiredSeconds: Math.round(requiredMs/1000), measuredSeconds:0 });
+    finalizeChainFlow();
+    return;
+  }
+
+  chainState.hiddenAccumMs = 0;
+  chainState.hiddenSince = document.visibilityState === 'hidden' ? Date.now() : null;
+  chainState.visHandler = function(){
+    if(document.visibilityState === 'hidden'){
+      chainState.hiddenSince = Date.now();
+    }else if(chainState.hiddenSince){
+      chainState.hiddenAccumMs += Date.now() - chainState.hiddenSince;
+      chainState.hiddenSince = null;
+    }
+  };
+  document.addEventListener('visibilitychange', chainState.visHandler);
+
+  document.getElementById('timerRing').style.display = 'none';
+  document.getElementById('linkCountdownNum').style.display = 'block';
+  document.getElementById('watchAdTitle').textContent = `Step ${index+1}/${steps.length}: ওখানে গিয়ে সময় কাটাও`;
+  document.getElementById('watchAdSub').textContent = 'পুরো সময় ওখানে থাকলে Continue বাটন চালু হবে';
+  const claimBtn = document.getElementById('linkClaimBtn');
+  claimBtn.style.display = 'block';
+  claimBtn.disabled = true;
+  claimBtn.textContent = 'অপেক্ষা করো…';
+  claimBtn.onclick = finishChainStep;
+  document.getElementById('linkCancelRow').style.display = 'block';
+  document.getElementById('linkCancelRow').querySelector('a').onclick = cancelChainFlow;
+  document.getElementById('watchModal').classList.add('show');
+
+  chainState.tickInterval = setInterval(()=>{
+    const liveHidden = chainState.hiddenAccumMs + (chainState.hiddenSince ? Date.now()-chainState.hiddenSince : 0);
+    const remain = Math.max(0, requiredMs - liveHidden);
+    document.getElementById('linkCountdownNum').textContent = Math.ceil(remain/1000);
+    if(remain <= 0 && claimBtn.disabled){
+      claimBtn.disabled = false;
+      claimBtn.textContent = 'Continue';
+    }
+  }, 500);
+  chainState._requiredMs = requiredMs;
+}
+
+function finishChainStep(){
+  const { hiddenAccumMs, hiddenSince, visHandler, tickInterval, _requiredMs, steps, index } = chainState;
+  clearInterval(tickInterval);
+  document.removeEventListener('visibilitychange', visHandler);
+  const finalHidden = hiddenAccumMs + (hiddenSince ? Date.now()-hiddenSince : 0);
+  document.getElementById('watchModal').classList.remove('show');
+  resetWatchModalVisuals();
+  chainState.results.push({
+    type: steps[index].type,
+    passed: finalHidden >= _requiredMs,
+    requiredSeconds: Math.round(_requiredMs/1000),
+    measuredSeconds: Math.round(finalHidden/1000)
+  });
+  if(finalHidden < _requiredMs){
+    showToast('যথেষ্ট সময় থাকোনি — এই ধাপ ব্যর্থ হয়েছে');
+    finalizeChainFlow();
+    return;
+  }
+  chainState.index++;
+  runChainStep();
+}
+
+function cancelChainFlow(){
+  if(!chainState) return;
+  if(chainState.tickInterval) clearInterval(chainState.tickInterval);
+  if(chainState.visHandler) document.removeEventListener('visibilitychange', chainState.visHandler);
+  const { steps, index, hiddenAccumMs, hiddenSince, _requiredMs } = chainState;
+  const finalHidden = (hiddenAccumMs||0) + (hiddenSince ? Date.now()-hiddenSince : 0);
+  chainState.results.push({
+    type: steps[index].type,
+    passed:false,
+    requiredSeconds: Math.round((_requiredMs||0)/1000),
+    measuredSeconds: Math.round(finalHidden/1000)
+  });
+  document.getElementById('watchModal').classList.remove('show');
+  resetWatchModalVisuals();
+  finalizeChainFlow();
+}
+
+// Logs and, if every step genuinely passed, credits the reward. Failed
+// or cancelled attempts are still logged (linkAdAttempts) for the
+// admin's analytics tab -- matching "যদি ঠিকঠাক মত কাজ না করে তাহলে
+// পেমেন্ট হবে না" -- but the log itself always happens either way, so
+// there's a real record to review, not silence on failure.
+async function finalizeChainFlow(){
+  const { ad, steps, results } = chainState;
+  const allStepsPassed = results.length === steps.length && results.every(r=>r.passed);
+  chainState = null;
+
+  if(!allStepsPassed){
+    try{
+      await db.collection('linkAdAttempts').add({
+        userId: currentUser.uid, adId: ad.id, allStepsPassed:false, steps: results,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }catch(_ignored){ /* logging a failure is best-effort; not credited either way */ }
+    return;
+  }
+
+  const uid = currentUser.uid;
+  const attemptRef = db.collection('linkAdAttempts').doc();
+  const claimRef = db.collection('claims').doc(uid + '_' + ad.id + '_chain_' + Date.now());
+  const cooldownRef = db.collection('cooldowns').doc(uid + '_' + ad.id);
+  const lifetimeLockRef = ad.oneTimeOnly ? db.collection('lifetimeLocks').doc(uid + '_' + ad.id) : null;
+
+  try{
+    await db.runTransaction(async (tx)=>{
+      if(lifetimeLockRef){
+        const lockSnap = await tx.get(lifetimeLockRef);
+        if(lockSnap.exists) throw new Error('ALREADY_CLAIMED_LIFETIME');
+      }
+      const cooldownSnap = await tx.get(cooldownRef);
+      const now = firebase.firestore.Timestamp.now();
+      if(cooldownSnap.exists){
+        const last = cooldownSnap.data().lastClaimedAt;
+        const cooldownMs = (ad.cooldownSeconds != null ? ad.cooldownSeconds : (ad.cooldownMinutes||0)*60) * 1000;
+        if(last && (now.toMillis() - last.toMillis()) < cooldownMs) throw new Error('COOLDOWN');
+      }
+      // attempt doc written FIRST -- the claims create rule (firestore.rules)
+      // reads it back via get() within this same transaction and requires
+      // allStepsPassed == true before allowing the claim write to proceed.
+      tx.set(attemptRef, { userId: uid, adId: ad.id, allStepsPassed: true, steps: results, timestamp: now });
+      tx.set(claimRef, { userId: uid, adId: ad.id, amount: ad.reward, timestamp: now, attemptId: attemptRef.id });
+      tx.set(cooldownRef, { userId: uid, adId: ad.id, lastClaimedAt: now }, { merge:true });
+      if(lifetimeLockRef){
+        tx.set(lifetimeLockRef, { userId: uid, adId: ad.id, claimedAt: now });
+      }
+    });
+    showToast('+৳' + ad.reward + ' credited!');
+    playEarnFeedback();
+  }catch(e){
+    const msg = e.message === 'COOLDOWN' ? 'Too soon — try again shortly.'
+      : e.message === 'ALREADY_CLAIMED_LIFETIME' ? 'এই ad আগেই একবার claim করা হয়ে গেছে — আর করা যাবে না।'
+      : 'Could not credit reward. Try again.';
+    showToast(msg);
+  }
+}
+
+/* ---------------- Daily streak bonus ----------------
+   Counted as a LOGIN streak (once per calendar day the app is opened),
+   not tied to watching a specific ad -- simplest, most reliable
+   interpretation of "daily streak bonus" and easy to explain to users.
+   Runs once per app-open (streakCheckDone guards against the config
+   listener firing again later in the same session). The actual amount
+   is computed here and INDEPENDENTLY verified by firestore.rules
+   (streakBonusPerDay x min(currentStreak, streakBonusCapDays)) -- this
+   code just proposes the same formula; the database is what actually
+   enforces it. */
+let streakCheckDone = false;
+async function maybeAwardDailyStreakBonus(){
+  if(streakCheckDone || !currentUser) return;
+  streakCheckDone = true;
+  const uid = currentUser.uid;
+  const today = todayDateStr();
+  const yesterday = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
+  const streakRef = db.collection('streaks').doc(uid);
+
+  try{
+    await db.runTransaction(async (tx)=>{
+      const snap = await tx.get(streakRef);
+      const now = firebase.firestore.Timestamp.now();
+      let newStreak;
+      if(!snap.exists){
+        newStreak = 1;
+        tx.set(streakRef, { userId: uid, currentStreak: 1, lastActiveDate: today });
+      }else{
+        const cur = snap.data();
+        if(cur.lastActiveDate === today) return; // already counted today -- nothing to do
+        newStreak = (cur.lastActiveDate === yesterday) ? (cur.currentStreak + 1) : 1;
+        tx.update(streakRef, { currentStreak: newStreak, lastActiveDate: today });
+      }
+      if(streakConfig.enabled && streakConfig.perDay > 0){
+        const days = Math.min(newStreak, Math.max(1, streakConfig.capDays));
+        const amount = streakConfig.perDay * days;
+        if(amount > 0){
+          tx.set(db.collection('claims').doc(uid + '_streak_' + today), {
+            userId: uid, adId: 'streak_bonus', amount, timestamp: now
+          });
         }
+      }
+    });
+  }catch(_e){ /* best-effort -- a missed streak-bonus day isn't worth surfacing an error banner for */ }
+}
 
-        function handleAuth() {
-            const name = document.getElementById('reg-name').value;
-            const email = document.getElementById('reg-email').value;
-            if (name.length < 3 || !email.includes("@")) return alert("সঠিক নাম ও ইমেইল দিন!");
-
-            db.ref('users/' + userId).set({
-                name: name,
-                email: email,
-                balance: 0.00,
-                refCount: 0,
-                id: userId
-            }).then(() => showMainApp());
+async function confirmClaim(ad, ymid){
+  const uid = currentUser.uid;
+  const cooldownId = uid + '_' + ad.id;
+  // FIX — one-time-only ads: doc id MUST exactly match what firestore.rules
+  // expects (`${uid}_${adId}`), since that's the only way the rule can
+  // recognize it as this user's own permanent lock for this specific ad.
+  const lifetimeLockRef = ad.oneTimeOnly ? db.collection('lifetimeLocks').doc(uid + '_' + ad.id) : null;
+  try{
+    await db.runTransaction(async (tx)=>{
+      // FIX — checked FIRST and inside the transaction, so a user can never
+      // slip through by double-tapping "Watch" faster than the UI updates.
+      // This mirrors the firestore.rules check exactly; that rule is the
+      // real, unbypassable enforcement — this is just failing fast with a
+      // clear message instead of only finding out from a permission error.
+      if(lifetimeLockRef){
+        const lockSnap = await tx.get(lifetimeLockRef);
+        if(lockSnap.exists){
+          throw new Error('ALREADY_CLAIMED_LIFETIME');
         }
+      }
 
-        function showMainApp(data) {
-            document.getElementById('auth-screen').classList.add('hidden');
-            document.getElementById('main-app').classList.remove('hidden');
-            document.getElementById('notice-container').classList.remove('hidden');
-            
-            if (data) {
-                // ২ দশমিক পর্যন্ত ব্যালেন্স দেখানো হচ্ছে
-                document.getElementById('balance').innerText = data.balance.toFixed(2);
-                document.getElementById('ref-count').innerText = data.refCount;
-                document.getElementById('user-display').innerText = data.name;
-                document.getElementById('ref-link-input').value = "https://t.me/@nbearning_bot?start=" + userId;
-                
-                const noticeText = document.getElementById('notice-text');
-                if (data.refCount > 10) {
-                    noticeText.innerText = "আপনি ১০টির বেশি রেফার করেছেন। টাকা তুলতে আপনাকে ৩০০০ অ্যাড দেখতে হবে। সাহায্য: @nayon093";
-                } else {
-                    noticeText.innerText = "১০টির কম রেফার থাকলে ৫০ টাকা হলেই উইথড্র করতে পারবেন। সাহায্য: @nayon093";
-                }
-            }
+      const cooldownRef = db.collection('cooldowns').doc(cooldownId);
+      const cooldownSnap = await tx.get(cooldownRef);
+      const now = firebase.firestore.Timestamp.now();
+
+      if(cooldownSnap.exists){
+        const last = cooldownSnap.data().lastClaimedAt;
+        // FIX — cooldownSeconds (minutes + seconds combined) is now the
+        // source of truth; cooldownMinutes kept only as a fallback for any
+        // ad document created before this field existed.
+        const cooldownMs = (ad.cooldownSeconds != null ? ad.cooldownSeconds : (ad.cooldownMinutes||0)*60) * 1000;
+        if(last && (now.toMillis() - last.toMillis()) < cooldownMs){
+          throw new Error('COOLDOWN');
         }
+      }
+      const claimRef = db.collection('claims').doc(ymid);
+      tx.set(claimRef, { userId: uid, adId: ad.id, amount: ad.reward, timestamp: now });
+      tx.set(cooldownRef, { userId: uid, adId: ad.id, lastClaimedAt: now }, { merge:true });
+      if(lifetimeLockRef){
+        tx.set(lifetimeLockRef, { userId: uid, adId: ad.id, claimedAt: now });
+      }
+    });
+    showToast('+৳' + ad.reward + ' credited!');
+    playEarnFeedback();
+  }catch(e){
+    const msg = e.message === 'COOLDOWN' ? 'Too soon — try again shortly.'
+      : e.message === 'ALREADY_CLAIMED_LIFETIME' ? 'এই ad আগেই একবার claim করা হয়ে গেছে — আর করা যাবে না।'
+      : 'Could not credit reward. Try again.';
+    showToast(msg);
+  }
+}
 
-        function watchAd() {
-            if (typeof show_10709966 === 'function') {
-                show_10709966().then(() => {
-                    // রিওয়ার্ড ০.০২ টাকা করা হয়েছে
-                    updateBalance(0.02);
-                }).catch((e) => {
-                    alert("অ্যাড এই মুহূর্তে পাওয়া যাচ্ছে না, আবার চেষ্টা করুন।");
-                });
-            } else {
-                alert("অ্যাড লোড হচ্ছে না। আপনার অ্যাডব্লকার বন্ধ করুন বা কিছুক্ষণ অপেক্ষা করুন।");
-            }
-        }
+/* ---------------- Withdrawals ---------------- */
+function selectMethod(el){
+  document.querySelectorAll('.method-opt').forEach(m=>m.classList.remove('sel'));
+  el.classList.add('sel');
+  selectedWithdrawMethod = el.dataset.method;
+}
 
-        function updateBalance(amt) {
-            db.ref('users/' + userId + '/balance').transaction((current) => {
-                return (current || 0) + amt;
-            });
-        }
+let withdrawalSubmitting = false;
+async function submitWithdrawal(){
+  if(withdrawalSubmitting) return; // guards against double-tap / double-submit
 
-        function copyRef() {
-            const copyText = document.getElementById("ref-link-input");
-            copyText.select();
-            document.execCommand("copy");
-            alert("রেফার লিঙ্ক কপি হয়েছে!");
-        }
+  const account = document.getElementById('wdAccount').value.trim();
+  const amount = parseFloat(document.getElementById('wdAmount').value);
 
-        function withdraw() {
-            const amt = parseFloat(document.getElementById('amount').value);
-            const phone = document.getElementById('phone').value;
-            
-            db.ref('users/' + userId).once('value', (snapshot) => {
-                const user = snapshot.val();
-                let minAmt = (user.refCount > 10) ? 3000 : 50;
+  // Recompute available balance fresh from the live caches instead of
+  // reading it back out of the DOM, which can be a stale render. Matches
+  // recompute()'s formula exactly — this used to leave out the new-user
+  // signup bonus, which could wrongly block someone from withdrawing
+  // money they'd genuinely earned.
+  const earnedFromClaims = claimsCache.reduce((s,c)=>s+(c.amount||0),0);
+  const earnedAsReferrer = referralBonusesCache.reduce((s,r)=>s+(r.referrerAmount||0),0);
+  const earnedAsNewUser = referralBonusesAsNewUserCache.reduce((s,r)=>s+(r.newUserAmount||0),0);
+  const reserved = withdrawalsCache
+    .filter(w=>w.status==='pending' || w.status==='approved')
+    .reduce((s,w)=>s+(w.amount||0),0);
+  const available = Math.max(0, earnedFromClaims + earnedAsReferrer + earnedAsNewUser - reserved);
 
-                if (amt < minAmt) return alert(`আপনার জন্য সর্বনিম্ন উত্তোলন ${minAmt} টাকা।`);
-                if (amt > user.balance) return alert("পর্যাপ্ত ব্যালেন্স নেই।");
+  if(!account || account.length < 11){ showToast('Enter a valid account number'); return; }
+  if(!amount || amount < withdrawalRules.minWithdrawal){
+    showToast('Minimum withdrawal is ৳' + withdrawalRules.minWithdrawal); return;
+  }
+  if(withdrawalRules.maxWithdrawal > 0 && amount > withdrawalRules.maxWithdrawal){
+    showToast('Maximum withdrawal is ৳' + withdrawalRules.maxWithdrawal); return;
+  }
+  if(amount > available){ showToast('Amount exceeds your available balance'); return; }
 
-                db.ref('withdraws').push({
-                    userId: userId,
-                    name: user.name,
-                    phone: phone,
-                    amount: amt,
-                    status: 'pending',
-                    time: new Date().toLocaleString()
-                }).then(() => {
-                    alert("রিকোয়েস্ট সফল! অ্যাডমিন @nayon093 এর সাথে যোগাযোগ করুন।");
-                });
-            });
-        }
+  // Admin-configured extra conditions — counted from data already loaded
+  // client-side, so this is a real check for the normal case, but same
+  // as the balance check above, someone bypassing the app entirely could
+  // get around it. Full server-side enforcement needs a Cloud Function
+  // (rules can't count documents) — noted in firestore.rules too.
+  if(withdrawalRules.maxRequestsPerDay > 0){
+    const oneDayAgo = Date.now() - 24*60*60*1000;
+    const todayCount = withdrawalsCache.filter(w=>w.requestedAt && w.requestedAt.toMillis() > oneDayAgo).length;
+    if(todayCount >= withdrawalRules.maxRequestsPerDay){
+      showToast('আজকের জন্য withdrawal request-এর সীমা শেষ'); return;
+    }
+  }
+  if(withdrawalRules.maxRequestsPerWeek > 0){
+    const oneWeekAgo = Date.now() - 7*24*60*60*1000;
+    const weekCount = withdrawalsCache.filter(w=>w.requestedAt && w.requestedAt.toMillis() > oneWeekAgo).length;
+    if(weekCount >= withdrawalRules.maxRequestsPerWeek){
+      showToast('এই সপ্তাহের জন্য withdrawal request-এর সীমা শেষ'); return;
+    }
+  }
+  if(withdrawalRules.minAdsRequired > 0){
+    const adsWatched = claimsCache.filter(c=>c.adId!=='admin_bonus').length;
+    if(adsWatched < withdrawalRules.minAdsRequired){
+      showToast('Withdraw করতে আরও কমপক্ষে ' + (withdrawalRules.minAdsRequired - adsWatched) + 'টা ad দেখতে হবে'); return;
+    }
+  }
+  if(withdrawalRules.minReferralsRequired > 0){
+    const referred = referralBonusesCache.length;
+    if(referred < withdrawalRules.minReferralsRequired){
+      showToast('Withdraw করতে আরও কমপক্ষে ' + (withdrawalRules.minReferralsRequired - referred) + ' জনকে রেফার করতে হবে'); return;
+    }
+  }
 
-        function logout() {
-            if(confirm("লগআউট করতে চান?")) {
-                localStorage.clear();
-                location.reload();
-            }
-        }
+  // FIX — withdrawal confirmation modal: validation passing no longer
+  // submits immediately. It stores the validated details and shows a
+  // confirm/cancel modal first, so a mistyped amount or account number
+  // isn't sent before the user has a chance to double-check it.
+  pendingWithdrawal = { account, amount, method: selectedWithdrawMethod };
+  document.getElementById('wdConfirmMethod').textContent = selectedWithdrawMethod;
+  document.getElementById('wdConfirmAccount').textContent = account;
+  document.getElementById('wdConfirmAmount').textContent = fmt(amount);
+  document.getElementById('withdrawConfirmModal').classList.add('show');
+}
 
-        init();
-    </script>
+let pendingWithdrawal = null;
+function closeWithdrawConfirm(){
+  document.getElementById('withdrawConfirmModal').classList.remove('show');
+  pendingWithdrawal = null;
+}
+
+async function confirmWithdrawalSubmit(){
+  if(withdrawalSubmitting || !pendingWithdrawal) return;
+  const { account, amount, method } = pendingWithdrawal;
+  document.getElementById('withdrawConfirmModal').classList.remove('show');
+
+  const btn = document.getElementById('wdSubmitBtn');
+  withdrawalSubmitting = true;
+  if(btn){ btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  try{
+    await db.collection('withdrawals').add({
+      userId: currentUser.uid,
+      userName: userDoc?.name || '',
+      method: method,
+      account, amount,
+      status: 'pending',
+      requestedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    document.getElementById('wdAccount').value='';
+    document.getElementById('wdAmount').value='';
+    pendingWithdrawal = null;
+    showToast('Withdrawal requested — you\'ll be paid within 24–48h');
+  }catch(e){
+    showToast('Could not submit request. Try again.');
+  }finally{
+    withdrawalSubmitting = false;
+    if(btn){ btn.disabled = false; btn.textContent = 'Request withdrawal'; }
+  }
+  // NOTE: this still only guards against double-tapping in the SAME
+  // browser tab. Two different tabs/devices submitting at nearly the same
+  // moment can still both pass this check before either write is reflected
+  // back — a full fix needs the balance check to happen server-side
+  // (Security Rules validating against a source of truth, or a Cloud
+  // Function using a transaction), same as claims in #2/#3 above.
+}
+
+function renderTxns(){
+  const claimTitle = (c)=> c.adId==='admin_bonus' ? 'Admin adjustment' : c.adId==='streak_bonus' ? '🔥 Daily streak bonus' : 'Ad reward';
+  const combined = [
+    // FIX — admin's note on a manual balance adjustment (credit or
+    // deduction) is now shown to the user, same principle as the
+    // reject-reason: any money movement the user didn't directly cause
+    // should come with a visible explanation.
+    ...claimsCache.map(c=>({ title: claimTitle(c), amount:c.amount, time:c.timestamp, status:null, note: c.adId==='admin_bonus' ? c.note : null })),
+    ...referralBonusesCache.map(r=>({ title: 'Referral bonus (you referred someone)', amount:r.referrerAmount, time:r.timestamp, status:null, note:null })),
+    ...referralBonusesAsNewUserCache.map(r=>({ title: 'Signup bonus (joined via a code)', amount:r.newUserAmount, time:r.timestamp, status:null, note:null })),
+    // Reject reason shown to the user, when admin left one.
+    ...withdrawalsCache.map(w=>({ title: w.method+' withdrawal', amount:-w.amount, time:w.requestedAt, status:w.status, note: w.status==='rejected' ? w.rejectReason : null }))
+  ].filter(t=>t.time).sort((a,b)=>b.time.toMillis()-a.time.toMillis()).slice(0,40);
+
+  const el = document.getElementById('txnList');
+  if(!combined.length){ el.innerHTML = '<div class="empty">No activity yet</div>'; return; }
+  el.innerHTML = combined.map(t=>`
+    <div class="txn-row">
+      <div class="txn-info">
+        <div class="t">${t.title}</div>
+        <div class="d">${t.time.toDate().toLocaleDateString()} ${t.status?`· <span class="status-chip status-${t.status}">${t.status}</span>`:''}</div>
+        ${t.note ? `<div class="d" style="color:${t.amount<0?'var(--rose)':'var(--muted)'};">${t.status==='rejected'?'কারণ':'নোট'}: ${escapeHtml(t.note)}</div>` : ''}
+      </div>
+      <div class="txn-amt ${t.amount<0?'neg':'pos'}">${t.amount<0?'-':'+'}৳${Math.abs(t.amount)}</div>
+    </div>`).join('');
+}
+
+/* ---------------- Notifications ----------------
+   "Read" state is tracked per-device in localStorage (fine here — this is
+   a real hosted page, not a Claude artifact sandbox where localStorage is
+   restricted) rather than in Firestore, to avoid an extra read/write per
+   user per notification for something this low-stakes. */
+function openSupportModal(){
+  document.getElementById('supportModal').classList.add('show');
+}
+function closeSupportModal(){
+  document.getElementById('supportModal').classList.remove('show');
+}
+
+
+/* ---------------- Support channels (multi-channel, admin-configured) ---------------- */
+function supportChannelHref(c){
+  const v = (c.value||'').trim();
+  switch(c.type){
+    case 'telegram': return 'https://t.me/' + v.replace(/^@/, '');
+    case 'whatsapp': return 'https://wa.me/' + v.replace(/[^\d]/g,'');
+    case 'instagram': return 'https://instagram.com/' + v.replace(/^@/, '');
+    case 'tiktok': return 'https://tiktok.com/@' + v.replace(/^@/, '');
+    case 'email': return 'mailto:' + v;
+    case 'phone': return 'tel:' + v;
+    case 'facebook':
+    case 'youtube':
+    case 'twitter':
+    case 'discord':
+    case 'linkedin':
+    case 'website':
+    case 'other':
+    default: return /^https?:\/\//i.test(v) ? v : ('https://' + v);
+  }
+}
+const SUPPORT_TYPE_ICON = { telegram:'💬', whatsapp:'📱', facebook:'📘', instagram:'📷', youtube:'▶️', tiktok:'🎵', twitter:'✖️', discord:'🎮', linkedin:'💼', website:'🌐', email:'✉️', phone:'📞', other:'🔗' };
+function renderSupportChannelsForUser(channels){
+  const el = document.getElementById('supportChannelsList');
+  if(!el) return;
+  if(!channels || !channels.length){
+    el.innerHTML = '<div class="empty" style="padding:14px;">কোনো support channel সেট করা নেই</div>';
+    return;
+  }
+  el.innerHTML = channels.map(c => `
+    <a href="${supportChannelHref(c)}" target="_blank" class="btn btn-ghost" style="display:block;margin-bottom:10px;text-decoration:none;text-align:center;">
+      ${SUPPORT_TYPE_ICON[c.type]||'🔗'} ${escapeHtml(c.label||c.type)}
+    </a>`).join('');
+}
+
+/* ---------------- Referral actions ---------------- */
+function copyReferral(){
+  const code = document.getElementById('referCode').textContent;
+  if(!code || code === '—'){ showToast('একটু অপেক্ষা করো, কোড লোড হচ্ছে…'); return; }
+
+  // navigator.clipboard is missing/blocked on some Android browsers and
+  // in-app webviews — it used to just silently do nothing there. This
+  // falls back to the older textarea+execCommand method, and if even that
+  // fails, at least tells you the code instead of staying silent.
+  function fallbackCopy(){
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = code;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast(ok ? 'Code copied!' : ('কপি করা যায়নি — কোডটা লিখে নাও: ' + code));
+    }catch(e){
+      showToast('কপি করা যায়নি — কোডটা লিখে নাও: ' + code);
+    }
+  }
+
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(code).then(()=>showToast('Code copied!')).catch(fallbackCopy);
+  }else{
+    fallbackCopy();
+  }
+}
+function shareReferral(){
+  const code = document.getElementById('referCode').textContent;
+  if(!code || code === '—'){ showToast('একটু অপেক্ষা করো, কোড লোড হচ্ছে…'); return; }
+  const link = window.location.origin + window.location.pathname + '?ref=' + encodeURIComponent(code);
+  const text = `Join NB Earning Zone and start earning — use my link: ${link}`;
+  if(navigator.share){
+    navigator.share({ text }).catch(()=>{ /* cancelled or unsupported — fall back */ copyReferral(); });
+  }else{
+    copyReferral();
+  }
+}
+
+/* ---------------- One-time owner/admin claim (no console work needed) ---------------- */
+async function checkAdminBootstrap(){
+  try{
+    const lockSnap = await db.collection('admins').doc('_bootstrap_lock').get();
+    if(!lockSnap.exists){
+      document.getElementById('claimAdminSection').style.display = 'block';
+    }
+  }catch(e){ /* rules denied read = already locked; leave hidden */ }
+}
+
+/* Now uses a transaction instead of a plain batch write. A batch has no
+   built-in "only if this doesn't already exist" guard, so two people
+   tapping the button around the same moment could both have gotten
+   through. Inside a transaction, Firestore re-runs the transaction if the
+   lock document changed between the read and the write, so only the first
+   commit can ever succeed — the second one reads lockSnap.exists === true
+   and throws before writing anything. firestore.rules also denies any
+   write to admins/_bootstrap_lock once it exists (create-only), and now
+   also denies admins/{uid} for anyone who isn't the account that owns
+   _bootstrap_lock — see the FIX comment in firestore.rules — so this is
+   enforced at the database level too, not just by this function. */
+async function claimOwnerAccess(){
+  const uid = currentUser.uid;
+  const lockRef = db.collection('admins').doc('_bootstrap_lock');
+  try{
+    await db.runTransaction(async (tx)=>{
+      const lockSnap = await tx.get(lockRef);
+      if(lockSnap.exists){
+        throw new Error('ALREADY_CLAIMED');
+      }
+      tx.set(db.collection('admins').doc(uid), { claimedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      tx.set(lockRef, { lockedBy: uid, lockedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    });
+    showToast('তুমি এখন Admin — admin-panel.html-এ একই email/password দিয়ে লগইন করো');
+    document.getElementById('claimAdminSection').style.display = 'none';
+  }catch(e){
+    showToast(e.message==='ALREADY_CLAIMED' ? 'অন্য কেউ আগেই claim করে ফেলেছে' : 'হয়নি — আবার চেষ্টা করো');
+  }
+}
+
+/* ---------------- Tabs ---------------- */
+function switchTab(name){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelector(`.nav-btn[data-panel="${name}"]`).classList.add('active');
+  // Lazy-start — no read cost for users who never open this tab.
+  if(name === 'leaderboard' && !leaderboardUnsub) listenLeaderboard();
+}
+
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+</script>
 </body>
 </html>
