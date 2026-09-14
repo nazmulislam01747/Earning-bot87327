@@ -640,7 +640,7 @@ let streakConfig = { enabled: false, perDay: 0, capDays: 1 };
 let selectedWithdrawMethod = "bKash";
 let unsubscribers = [];
 
-// FIX — set while a registration is in-flight (auth account created but the
+     // FIX — set while a registration is in-flight (auth account created but the
 // Firestore transaction for users/phoneRegistry/referralCodes hasn't
 // resolved yet). onAuthStateChanged uses this to show a loading screen
 // instead of the main app (which would render with an empty/undefined
@@ -1055,6 +1055,8 @@ async function loadUserAndListen(){
   // Same config/settings doc as the referral bonus amounts, just the
   // withdrawal-rules fields — kept live (not a one-time get like the
   // registration flow uses) so the form reflects whatever admin has set
+  const wdRulesUnsub = db.collection('config').doc('settings').onSnapshot(snap=>{
+    const s = snap.exists ? snap.data() : {};
     withdrawalRules = {
       minWithdrawal: s.minWithdrawal ?? 100,
       maxWithdrawal: s.maxWithdrawal ?? 0,
@@ -1224,7 +1226,7 @@ function listenLeaderboard(){
     .orderBy(leaderboardSort, 'desc')
     .limit(20)
     .onSnapshot(snap=>{
-    const rows = snap.docs.map(d=>d.data());
+	 const rows = snap.docs.map(d=>d.data());
       if(!rows.length){ el.innerHTML = '<div class="empty">আজকে এখনো কেউ তালিকায় নেই</div>'; return; }
       el.innerHTML = rows.map((r,i)=>`
         <div class="txn-row">
@@ -1631,28 +1633,51 @@ function cancelChainFlow(){
   finalizeChainFlow();
 }
 
-// Logs and, if every step genuinely passed, credits the reward. Failed
-// or cancelled attempts are still logged (linkAdAttempts) for the
-// admin's analytics tab -- matching "যদি ঠিকঠাক মত কাজ না করে তাহলে
-// পেমেন্ট হবে না" -- but the log itself always happens either way, so
-// there's a real record to review, not silence on failure.
+// FIX — same-transaction get()/exists() bug: the attempt doc used to be
+// written INSIDE the same transaction as the claim, and firestore.rules'
+// claims-create rule then tried to get() that very attempt doc to verify
+// allStepsPassed. A rule's get()/exists() only ever sees the database
+// state as of the START of the current transaction — it can NEVER see an
+// earlier write from that SAME transaction — so this check always saw
+// the attempt as not-yet-existing and denied every chain-ad claim, even
+// fully legitimate ones. Fix: commit the PASSED attempt on its own FIRST
+// (a separate, already-finished write), then run the claim/cooldown/
+// lifetime-lock transaction second, so by the time the rule's get() runs,
+// the attempt is genuinely already-committed state it can see.
 async function finalizeChainFlow(){
   const { ad, steps, results } = chainState;
   const allStepsPassed = results.length === steps.length && results.every(r=>r.passed);
   chainState = null;
 
+  const uid = currentUser.uid;
+
   if(!allStepsPassed){
     try{
       await db.collection('linkAdAttempts').add({
-        userId: currentUser.uid, adId: ad.id, allStepsPassed:false, steps: results,
+        userId: uid, adId: ad.id, allStepsPassed:false, steps: results,
         timestamp: firebase.firestore.FieldValue.serverTimestamp()
       });
     }catch(_ignored){ /* logging a failure is best-effort; not credited either way */ }
     return;
   }
 
-  const uid = currentUser.uid;
-  const attemptRef = db.collection('linkAdAttempts').doc();
+  // Step 1 — commit the PASSED attempt on its own, BEFORE the claim.
+  let attemptId;
+  try{
+    const attemptRef = await db.collection('linkAdAttempts').add({
+      userId: uid, adId: ad.id, allStepsPassed: true, steps: results,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    attemptId = attemptRef.id;
+  }catch(e){
+    showToast('Verification log সেভ করা যায়নি — আবার চেষ্টা করো');
+    return;
+     }
+     
+    // Step 2 — now that the attempt is real, committed state, the claims
+  // rule's get() on it will succeed. Claim + cooldown + lifetime-lock
+  // still go together atomically here since none of THEM reference a
+  // write from earlier in this same transaction.
   const claimRef = db.collection('claims').doc(uid + '_' + ad.id + '_chain_' + Date.now());
   const cooldownRef = db.collection('cooldowns').doc(uid + '_' + ad.id);
   const lifetimeLockRef = ad.oneTimeOnly ? db.collection('lifetimeLocks').doc(uid + '_' + ad.id) : null;
@@ -1670,11 +1695,7 @@ async function finalizeChainFlow(){
         const cooldownMs = (ad.cooldownSeconds != null ? ad.cooldownSeconds : (ad.cooldownMinutes||0)*60) * 1000;
         if(last && (now.toMillis() - last.toMillis()) < cooldownMs) throw new Error('COOLDOWN');
       }
-      // attempt doc written FIRST -- the claims create rule (firestore.rules)
-      // reads it back via get() within this same transaction and requires
-      // allStepsPassed == true before allowing the claim write to proceed.
-      tx.set(attemptRef, { userId: uid, adId: ad.id, allStepsPassed: true, steps: results, timestamp: now });
-      tx.set(claimRef, { userId: uid, adId: ad.id, amount: ad.reward, timestamp: now, attemptId: attemptRef.id });
+      tx.set(claimRef, { userId: uid, adId: ad.id, amount: ad.reward, timestamp: now, attemptId });
       tx.set(cooldownRef, { userId: uid, adId: ad.id, lastClaimedAt: now }, { merge:true });
       if(lifetimeLockRef){
         tx.set(lifetimeLockRef, { userId: uid, adId: ad.id, claimedAt: now });
@@ -1695,11 +1716,19 @@ async function finalizeChainFlow(){
    not tied to watching a specific ad -- simplest, most reliable
    interpretation of "daily streak bonus" and easy to explain to users.
    Runs once per app-open (streakCheckDone guards against the config
-   listener firing again later in the same session). The actual amount
-   is computed here and INDEPENDENTLY verified by firestore.rules
-   (streakBonusPerDay x min(currentStreak, streakBonusCapDays)) -- this
-   code just proposes the same formula; the database is what actually
-   enforces it. */
+   listener firing again later in the same session).
+
+   FIX — same-transaction get()/exists() bug: the streaks/{uid} update
+   and the streak_bonus claim used to be written in ONE transaction, but
+   firestore.rules' claims-create rule computes the expected bonus amount
+   by reading streaks/{uid} via get() -- which only ever sees state as of
+   the START of the transaction (the OLD, pre-increment streak), while
+   the client computed the amount from the NEW, post-increment streak.
+   Those two numbers essentially never matched, so this claim was denied
+   on almost every call. Fix: commit the streak update ON ITS OWN first
+   (so it becomes real, already-committed state), THEN write the claim
+   as a separate write afterward -- now the rule's get() sees the correct
+   NEW streak value. */
 let streakCheckDone = false;
 async function maybeAwardDailyStreakBonus(){
   if(streakCheckDone || !currentUser) return;
@@ -1709,29 +1738,35 @@ async function maybeAwardDailyStreakBonus(){
   const yesterday = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })();
   const streakRef = db.collection('streaks').doc(uid);
 
+  let newStreak = null;
   try{
+    // Step 1 — update (or create) the streak doc by itself.
     await db.runTransaction(async (tx)=>{
       const snap = await tx.get(streakRef);
-      const now = firebase.firestore.Timestamp.now();
-      let newStreak;
       if(!snap.exists){
         newStreak = 1;
         tx.set(streakRef, { userId: uid, currentStreak: 1, lastActiveDate: today });
       }else{
         const cur = snap.data();
-        if(cur.lastActiveDate === today) return; // already counted today -- nothing to do
+        if(cur.lastActiveDate === today){ newStreak = null; return; } // already counted today -- nothing to do
         newStreak = (cur.lastActiveDate === yesterday) ? (cur.currentStreak + 1) : 1;
         tx.update(streakRef, { currentStreak: newStreak, lastActiveDate: today });
       }
-      if(streakConfig.enabled && streakConfig.perDay > 0){
-        const days = Math.min(newStreak, Math.max(1, streakConfig.capDays));
-        const amount = streakConfig.perDay * days;
-        if(amount > 0){
-          tx.set(db.collection('claims').doc(uid + '_streak_' + today), {
-            userId: uid, adId: 'streak_bonus', amount, timestamp: now
-          });
-        }
-      }
+    });
+  }catch(_e){ return; /* best-effort -- a missed streak day isn't worth surfacing an error banner for */ }
+
+  if(newStreak === null) return; // already counted today
+  if(!streakConfig.enabled || streakConfig.perDay <= 0) return;
+
+  // Step 2 — streak update is now committed, real state. Safe to write
+  // the bonus claim: firestore.rules' get(streaks/{uid}) will now see
+  // this NEW value and the amounts will match.
+  const days = Math.min(newStreak, Math.max(1, streakConfig.capDays));
+  const amount = streakConfig.perDay * days;
+  if(amount <= 0) return;
+  try{
+    await db.collection('claims').doc(uid + '_streak_' + today).set({
+      userId: uid, adId: 'streak_bonus', amount, timestamp: firebase.firestore.FieldValue.serverTimestamp()
     });
   }catch(_e){ /* best-effort -- a missed streak-bonus day isn't worth surfacing an error banner for */ }
 }
@@ -2037,33 +2072,65 @@ async function checkAdminBootstrap(){
   }catch(e){ /* rules denied read = already locked; leave hidden */ }
 }
 
-/* Now uses a transaction instead of a plain batch write. A batch has no
-   built-in "only if this doesn't already exist" guard, so two people
-   tapping the button around the same moment could both have gotten
-   through. Inside a transaction, Firestore re-runs the transaction if the
-   lock document changed between the read and the write, so only the first
-   commit can ever succeed — the second one reads lockSnap.exists === true
-   and throws before writing anything. firestore.rules also denies any
-   write to admins/_bootstrap_lock once it exists (create-only), and now
-   also denies admins/{uid} for anyone who isn't the account that owns
-   _bootstrap_lock — see the FIX comment in firestore.rules — so this is
-   enforced at the database level too, not just by this function. */
+/* FIX — same-transaction get()/exists() bug: this used to write
+   admins/_bootstrap_lock AND admins/{uid} together inside ONE
+   transaction, with the admins/{uid} create rule requiring
+   _bootstrap_lock to already exist (see firestore.rules). A rule's
+   get()/exists() only ever sees database state as of the START of the
+   current transaction — it can never see an earlier write from that SAME
+   transaction — so that check could never see the lock as existing, and
+   "Claim Owner Access" could never succeed for anyone, not even the
+   very first legitimate claimant.
+
+   Fix: two SEPARATE, SEQUENTIAL writes instead of one transaction.
+   Step 1 tries to create _bootstrap_lock as a plain (non-transactional)
+   write. Firestore classifies a .set() on a path as a `create` only when
+   nothing exists there yet -- and firestore.rules denies any further
+   write to that path once it exists (create-only) -- so across any
+   number of people tapping the button at once, AT MOST one of these
+   step-1 writes can ever succeed; that natural race-safety is exactly
+   what the old transaction was trying (and failing) to provide.
+   Step 2 only runs once step 1's success (ours or an earlier one of ours
+   that didn't finish step 2) is confirmed, and by then the lock is
+   already-committed state that the admins/{uid} create rule's get() can
+   see correctly. */
 async function claimOwnerAccess(){
   const uid = currentUser.uid;
   const lockRef = db.collection('admins').doc('_bootstrap_lock');
+
   try{
-    await db.runTransaction(async (tx)=>{
-      const lockSnap = await tx.get(lockRef);
-      if(lockSnap.exists){
-        throw new Error('ALREADY_CLAIMED');
+    // Step 1 — try to claim the lock. Only the very first caller across
+    // all concurrent attempts can ever have this succeed (create-only,
+    // enforced by firestore.rules).
+    await lockRef.set({ lockedBy: uid, lockedAt: firebase.firestore.FieldValue.serverTimestamp() });
+  }catch(e){
+    // Lock write failed -- either someone else already won it, or WE
+    // already won it on a previous attempt where step 2 below then
+    // failed (e.g. network drop). Check which case this is before
+    // giving up.
+    try{
+      const lockSnap = await lockRef.get();
+      if(!lockSnap.exists || lockSnap.data().lockedBy !== uid){
+        showToast('অন্য কেউ আগেই claim করে ফেলেছে');
+        return;
       }
-      tx.set(db.collection('admins').doc(uid), { claimedAt: firebase.firestore.FieldValue.serverTimestamp() });
-      tx.set(lockRef, { lockedBy: uid, lockedAt: firebase.firestore.FieldValue.serverTimestamp() });
-    });
+      // else: it's our own lock from an earlier incomplete attempt --
+      // fall through to step 2 below.
+    }catch(_e2){
+      showToast('হয়নি — আবার চেষ্টা করো');
+      return;
+    }
+  }
+
+  try{
+    // Step 2 — the lock is now confirmed ours and already committed, so
+    // firestore.rules' get(_bootstrap_lock) for this create will see it
+    // correctly.
+    await db.collection('admins').doc(uid).set({ claimedAt: firebase.firestore.FieldValue.serverTimestamp() });
     showToast('তুমি এখন Admin — admin-panel.html-এ একই email/password দিয়ে লগইন করো');
     document.getElementById('claimAdminSection').style.display = 'none';
   }catch(e){
-    showToast(e.message==='ALREADY_CLAIMED' ? 'অন্য কেউ আগেই claim করে ফেলেছে' : 'হয়নি — আবার চেষ্টা করো');
+    showToast('Lock claim হয়েছে কিন্তু admin অ্যাকসেস তৈরি হয়নি — আবার চেষ্টা করো');
   }
 }
 
